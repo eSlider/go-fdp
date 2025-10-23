@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/csv"
 	"errors"
 	"fmt"
 	"io"
@@ -20,6 +21,11 @@ import (
 	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/duckdb/duckdb-go/v2"
+	"github.com/gocarina/gocsv"
+	"github.com/jszwec/csvutil"
+	"github.com/xitongsys/parquet-go-source/local"
+	"github.com/xitongsys/parquet-go/parquet"
+	"github.com/xitongsys/parquet-go/writer"
 )
 
 type Frequency string
@@ -67,6 +73,58 @@ type HistoryQuery struct {
 
 	Date   time.Time
 	Symbol string
+}
+
+// CSVKline - binance kline data
+type CSVKline struct {
+	OpenTime   int64   `csv:"0" parquet:"name=open_time, type=INT64, logicaltype=TIME,logicaltype.isadjustedtoutc=true, logicaltype.unit=MICROS"`
+	OpenPrice  float64 `csv:"1" parquet:"name=open, type=DOUBLE"`
+	HighPrice  float64 `csv:"2" parquet:"name=high, type=DOUBLE"`
+	LowPrice   float64 `csv:"3" parquet:"name=low, type=DOUBLE"`
+	ClosePrice float64 `csv:"4" parquet:"name=close, type=DOUBLE"`
+	Volume     float64 `csv:"5" parquet:"name=volume, type=DOUBLE"`
+	CloseTime  int64   `csv:"6" parquet:"name=close_time, type=INT64, logicaltype=TIME,logicaltype.isadjustedtoutc=true, logicaltype.unit=MICROS"`
+
+	QuoteVolume    float64 `csv:"7"`
+	NumberOfTrades int64   `csv:"8"`
+	TakerBuyVolume float64 `csv:"9"`
+	TakerBuyQuote  float64 `csv:"10"`
+	Ignore         int64   `csv:"11"`
+}
+
+func TransformCSVToParquet(from *csv.Reader, parquetPath string) {
+	userHeader, _ := csvutil.Header(CSVKline{}, "csv")
+	dec, _ := csvutil.NewDecoder(from, userHeader...)
+
+	// remove file if exists
+	os.Remove(parquetPath)
+
+	fw, err := local.NewLocalFileWriter(parquetPath)
+	if err != nil {
+		log.Println("Can't create local file", err)
+		return
+	}
+	defer fw.Close()
+	pw, err := writer.NewParquetWriter(fw, new(CSVKline), 2)
+	if err != nil {
+		log.Println("Can't create parquet writer", err)
+		return
+	}
+	pw.RowGroupSize = 1 * 1024 * 1024 // 1
+	// MB
+	pw.CompressionType = parquet.CompressionCodec_ZSTD
+	defer pw.WriteStop()
+	for {
+		var u CSVKline
+		// Read records from csv
+		if err := dec.Decode(&u); err == io.EOF {
+			break
+		}
+		// Write records to parquet
+		if err = pw.Write(&u); err != nil {
+			log.Println("Write error", err)
+		}
+	}
 }
 
 // Link returns normalized link to zip file
@@ -396,26 +454,67 @@ func main() {
 				log.Printf("failed to create directory for parquet %s: %v", parquetDir, err)
 				return
 			}
-
-			// Use duckdb to convert CSV to parquet with ZSTD compression
-			if _, err := srv.db.Exec(fmt.Sprintf(`
-		COPY (
-			SELECT * FROM read_csv_auto('/dev/stdin')
-		) TO '%s' (FORMAT PARQUET, COMPRESSION ZSTD)
-	`, parquetPath), csvData); err != nil {
-				log.Printf("failed to write parquet file %s: %v", parquetPath, err)
-				return
-			}
 		}()
 
-		// Use duckdb to load csvData into table
-		// Example:
-		//1758499200000000,0.00096228,0.00719617,0.00096228,0.00486156,250418.32000000,1758585599999999,1113.83552852,5572,141985.82000000,604.43744610,0
-		//1758585600000000,0.00479669,0.00730000,0.00461404,0.00565861,68079.64000000,1758671999999999,403.46344821,1621,39911.87000000,231.65703083,0
-		_, err = srv.db.Exec(fmt.Sprintf(`
-				CREATE TABLE my_table AS
-				SELECT * FROM read_csv_auto('/dev/stdin')
-		`), csvData)
+		// Add these imports at the top:
+
+		//reader := csv.NewReader(strings.NewReader(csvData))
+		var klines []*CSVKline
+		err = gocsv.Unmarshal(strings.NewReader(csvData), &klines)
+		//
+		//for {
+		//	record, err := reader.Read()
+		//	if err == io.EOF {
+		//		break
+		//	}
+		//	if err != nil {
+		//		return fmt.Errorf("error reading CSV: %v", err)
+		//	}
+		//
+		//	// Parse the CSV record into CSVKline struct
+		//	kline := CSVKline{}
+		//
+		//	if err != nil {
+		//		return fmt.Errorf("error unmarshalling CSV record: %v", err)
+		//	}
+		//
+		//	// Convert string values to appropriate types
+		//	kline.OpenTime, _ = strconv.ParseInt(record[0], 10, 64)
+		//	kline.OpenPrice, _ = strconv.ParseFloat(record[1], 64)
+		//	kline.HighPrice, _ = strconv.ParseFloat(record[2], 64)
+		//	kline.LowPrice, _ = strconv.ParseFloat(record[3], 64)
+		//	kline.ClosePrice, _ = strconv.ParseFloat(record[4], 64)
+		//	kline.Volume, _ = strconv.ParseFloat(record[5], 64)
+		//	kline.CloseTime, _ = strconv.ParseInt(record[6], 10, 64)
+		//	kline.QuoteVolume, _ = strconv.ParseFloat(record[7], 64)
+		//	kline.NumberOfTrades, _ = strconv.ParseInt(record[8], 10, 64)
+		//	kline.TakerBuyVolume, _ = strconv.ParseFloat(record[9], 64)
+		//	kline.TakerBuyQuote, _ = strconv.ParseFloat(record[10], 64)
+		//	kline.Ignore, _ = strconv.ParseInt(record[11], 10, 64)
+		//
+		//	klines = append(klines, kline)
+		//}
+
+		// Now create the table with proper column names and types
+		_, err = srv.db.Exec(`CREATE TABLE IF NOT EXISTS klines
+			(
+				open_time        BIGINT,
+				open_price       DOUBLE,
+				high_price       DOUBLE,
+				low_price        DOUBLE,
+				close_price      DOUBLE,
+				volume           DOUBLE,
+				close_time       BIGINT,
+				quote_volume     DOUBLE,
+				number_of_trades BIGINT,
+				taker_buy_volume DOUBLE,
+				taker_buy_quote  DOUBLE,
+				ignore           BIGINT
+			)
+		`)
+		if err != nil {
+			return fmt.Errorf("error creating table: %v", err)
+		}
 
 		return nil
 	})
