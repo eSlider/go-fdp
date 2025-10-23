@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -128,6 +130,7 @@ type BinanceService struct {
 	client     *s3.Client          // S3 Client
 	downloader *manager.Downloader // S3 Downloader
 	bucket     string
+	localDir   string // Local directory for downloaded files
 }
 
 // List objects by path whic
@@ -305,17 +308,105 @@ func main() {
 		if strings.HasSuffix(path, "/") {
 			return nil
 		}
+
 		//out, in := io.Pipe()
 		in := &BufferAt{}
-		_, err = srv.Download(path, in)
-		if err != nil {
-			return err
+
+		// Check if a file already exists locally
+		_, err := os.Stat(path)
+		if err == nil || !os.IsNotExist(err) {
+			// Read existing file
+			fileContent, err := os.ReadFile(path)
+			if err != nil {
+				return fmt.Errorf("failed to read existing file: %v", err)
+			}
+
+			// Write content to BufferAt
+			if _, err = in.WriteAt(fileContent, 0); err != nil {
+				return fmt.Errorf("failed to write to buffer: %v", err)
+			}
+
+			log.Printf("File %s already exists, loaded from disk", path)
+		} else {
+			// Download file if it doesn't exist
+			_, err = srv.Download(path, in)
+			if err != nil {
+				return err
+			}
+			// Store a downloaded file into a local directory save it as a zip file
+			go func() {
+				// Create directory if not exists
+				dest := path
+				dir := filepath.Dir(dest)
+				if err := os.MkdirAll(dir, 0755); err != nil {
+					log.Printf("failed to create directory %s: %v", dir, err)
+					return
+				}
+				// Save file
+				if err := os.WriteFile(dest, in.Bytes(), 0644); err != nil {
+					log.Printf("failed to write file %s: %v", dest, err)
+					return
+				}
+			}()
 		}
 
+		// Store CSV as structured data into duckdb hive partitioned table as parquet files
 		csvData, err := decompressZip(in.Bytes())
 		if err != nil {
 			return err
 		}
+
+		// Store CSV file parallel to ZIP
+		go func() {
+			csvPath := strings.TrimSuffix(path, ".zip") + ".csv"
+
+			// Check if CSV already exists
+			if _, err := os.Stat(csvPath); err == nil {
+				log.Printf("CSV file %s already exists, skipping", csvPath)
+				return
+			}
+
+			// Create directory if not exists
+			csvDir := filepath.Dir(csvPath)
+			if err := os.MkdirAll(csvDir, 0755); err != nil {
+				log.Printf("failed to create directory for CSV %s: %v", csvDir, err)
+				return
+			}
+
+			// Save CSV file
+			if err := os.WriteFile(csvPath, []byte(csvData), 0644); err != nil {
+				log.Printf("failed to write CSV file %s: %v", csvPath, err)
+				return
+			}
+		}()
+
+		// Store parquet file parallel to ZIP based on CSV
+		go func() {
+			parquetPath := strings.TrimSuffix(path, ".zip") + ".parquet"
+
+			// Check if parquet already exists
+			if _, err := os.Stat(parquetPath); err == nil {
+				log.Printf("Parquet file %s already exists, skipping", parquetPath)
+				return
+			}
+
+			// Create directory if not exists
+			parquetDir := filepath.Dir(parquetPath)
+			if err := os.MkdirAll(parquetDir, 0755); err != nil {
+				log.Printf("failed to create directory for parquet %s: %v", parquetDir, err)
+				return
+			}
+
+			// Use duckdb to convert CSV to parquet with ZSTD compression
+			if _, err := srv.db.Exec(fmt.Sprintf(`
+		COPY (
+			SELECT * FROM read_csv_auto('/dev/stdin')
+		) TO '%s' (FORMAT PARQUET, COMPRESSION ZSTD)
+	`, parquetPath), csvData); err != nil {
+				log.Printf("failed to write parquet file %s: %v", parquetPath, err)
+				return
+			}
+		}()
 
 		// Use duckdb to load csvData into table
 		// Example:
