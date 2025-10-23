@@ -84,7 +84,7 @@ func (s *Service) List(
 
 			// Handle callbacks
 			for _, callback := range callbacks {
-				// Run calback in goroutine's
+				// Run callback in a goroutine
 				go func() {
 					if errC := callback(key, page); errC != nil {
 						err = errors.Join(err, errC)
