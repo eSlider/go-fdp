@@ -20,7 +20,7 @@ import (
 
 // main - Init
 func main() {
-	const prefix = "data/spot/monthly/klines/BTCUSDT/1m/"
+	prefix := "data/spot/monthly/klines/BTCUSDT/1m/"
 	ctx := context.Background()
 	srv, err := binance.NewService(ctx)
 	if err != nil {
@@ -30,6 +30,9 @@ func main() {
 	var wg sync.WaitGroup
 
 	paths, err := srv.List(prefix, func(path string, page *s3.ListObjectsV2Output) error {
+		wg.Add(1)
+		defer wg.Done()
+
 		if strings.HasSuffix(path, "CHECKSUM") {
 			return nil
 		}
@@ -131,7 +134,7 @@ func main() {
 				return
 			}
 
-			// Create directory if not exists
+			// Create a directory if not exists
 			parquetDir := filepath.Dir(parquetPath)
 			if err := os.MkdirAll(parquetDir, 0755); err != nil {
 				log.Printf("failed to create directory for parquet %s: %v", parquetDir, err)
