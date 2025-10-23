@@ -1,0 +1,9 @@
+# IDE's
+/.idea
+
+# Data
+/data
+
+# DB files
+*.duckdb
+*.db
