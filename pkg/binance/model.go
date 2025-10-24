@@ -52,11 +52,11 @@ type HistoryAsset struct {
 	Symbol string
 }
 
-func (q HistoryAsset) String() interface{} {
+func (q HistoryAsset) String() string {
 	return q.Link()
 }
 
-func (q HistoryAsset) Link() interface{} {
+func (q HistoryAsset) Link() string {
 	if q.Market == "" {
 		q.Market = Spot
 	}
@@ -86,17 +86,46 @@ func (q HistoryAsset) Link() interface{} {
 
 // Kline - binance kline data
 type Kline struct {
-	OpenTime   int64   `csv:"0" parquet:"name=open_time, type=INT64, logicaltype=TIME,logicaltype.isadjustedtoutc=true, logicaltype.unit=MICROS"`
-	OpenPrice  float64 `csv:"1" parquet:"name=open, type=DOUBLE"`
-	HighPrice  float64 `csv:"2" parquet:"name=high, type=DOUBLE"`
-	LowPrice   float64 `csv:"3" parquet:"name=low, type=DOUBLE"`
-	ClosePrice float64 `csv:"4" parquet:"name=close, type=DOUBLE"`
-	Volume     float64 `csv:"5" parquet:"name=volume, type=DOUBLE"`
-	CloseTime  int64   `csv:"6" parquet:"name=close_time, type=INT64, logicaltype=TIME,logicaltype.isadjustedtoutc=true, logicaltype.unit=MICROS"`
+	OpenTime   int64   `csv:"0"`
+	OpenPrice  float64 `csv:"1"`
+	HighPrice  float64 `csv:"2"`
+	LowPrice   float64 `csv:"3"`
+	ClosePrice float64 `csv:"4"`
+	Volume     float64 `csv:"5"`
+	CloseTime  int64   `csv:"6"`
 
 	QuoteVolume    float64 `csv:"7"`
 	NumberOfTrades int64   `csv:"8"`
 	TakerBuyVolume float64 `csv:"9"`
 	TakerBuyQuote  float64 `csv:"10"`
 	Ignore         int64   `csv:"11"`
+}
+
+type ParquetKline struct {
+	OpenTime  int32 `parquet:"name=open_time, type=INT64, logicaltype=TIME,logicaltype.isadjustedtoutc=true, logicaltype.unit=MILLIS"`
+	CloseTime int32 `parquet:"name=close_time, type=INT64, logicaltype=TIME,logicaltype.isadjustedtoutc=true, logicaltype.unit=MILLIS"`
+	Candle
+}
+
+type Candle struct {
+	Open   float64 `parquet:"name=open, type=DOUBLE"`
+	High   float64 `parquet:"name=high, type=DOUBLE"`
+	Low    float64 `parquet:"name=low, type=DOUBLE"`
+	Close  float64 `parquet:"name=close, type=DOUBLE"`
+	Volume float64 `parquet:"name=volume, type=DOUBLE"`
+}
+
+// NewParquetKline - optimize kline data for parquet
+func NewParquetKline(kline *Kline) *ParquetKline {
+	return &ParquetKline{
+		OpenTime:  int32(kline.OpenTime),
+		CloseTime: int32(kline.CloseTime),
+		Candle: Candle{
+			Open:   kline.OpenPrice,
+			High:   kline.HighPrice,
+			Low:    kline.LowPrice,
+			Close:  kline.ClosePrice,
+			Volume: kline.Volume,
+		},
+	}
 }

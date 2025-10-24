@@ -101,7 +101,7 @@ func main() {
 				return
 			}
 
-			// Create directory if not exists
+			// Create a directory if not exists
 			csvDir := filepath.Dir(csvPath)
 			if err := os.MkdirAll(csvDir, 0755); err != nil {
 				log.Printf("failed to create directory for CSV %s: %v", csvDir, err)
@@ -152,8 +152,12 @@ func main() {
 				log.Println("Can't create parquet writer", err)
 				return
 			}
+			// len(csvData.Bytes())/6
 			pw.RowGroupSize = 1 * 1024 * 1024 // 1
-			// MB
+			pw.PageSize = 8 * 1024            // default 8K
+
+			// Recaluclate row group size and page size by number of rows and binance kline size
+
 			pw.CompressionType = parquet.CompressionCodec_ZSTD
 			defer pw.WriteStop()
 			for _, x := range klines {
