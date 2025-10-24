@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"sync-v3/binance"
+	"sync-v3/pkg/binance"
 	"sync-v3/pkg/data"
 	"time"
 
@@ -20,9 +20,19 @@ import (
 
 // main - Init
 func main() {
-	prefix := "data/spot/monthly/klines/BTCUSDT/1m/"
+	//prefix := "data/spot/monthly/klines/ETHUSDT/"
+
+	prefix := binance.HistoryAsset{
+		Market:    binance.Spot,
+		Frequency: binance.Daily,
+		Interval:  binance.OneMinute,
+		Indicator: binance.AggTrades,
+		Date:      time.Date(2021, 1, 1, 0, 0, 0, 0, time.UTC),
+		Symbol:    "ETHUSDT",
+	}.Link()
+
 	ctx := context.Background()
-	srv, err := binance.NewService(ctx)
+	srv, err := binance.NewHistoryConsumer(ctx)
 	if err != nil {
 		log.Fatalf("could not initialize binance service: %s", err.Error())
 	}
@@ -160,9 +170,17 @@ func main() {
 
 			pw.CompressionType = parquet.CompressionCodec_ZSTD
 			defer pw.WriteStop()
-			for _, x := range klines {
+			for _, kline := range klines {
+
+				// Binance from 2025 has a new time format in microseconds, but before that it was milliseconds
+				// Check if CloseTime value is in milliseconds, then convert to microseconds
+				//if kline.CloseTime < 1000000 {
+				//	kline.CloseTime *= 1000
+				//}
+
 				// Write records to parquet
-				if err = pw.Write(&x); err != nil {
+				bkl := binance.NewParquetKline(&kline)
+				if err = pw.Write(bkl); err != nil {
 					log.Println("Write error", err)
 				}
 			}
