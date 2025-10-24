@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -58,8 +59,10 @@ func (s *HistoryConsumer) List(
 	paths []string,
 	err error,
 ) {
-
-	// List all files in the bucket in the provided path
+	// Ensure path ends with /
+	if !strings.HasSuffix(path, "/") {
+		path = path + "/"
+	}
 
 	// Create paginator
 	list := s3.NewListObjectsV2Paginator(s.client, &s3.ListObjectsV2Input{

@@ -12,26 +12,26 @@ const (
 	Daily             = "daily"
 )
 
-type Interval string
+type Frame string
 
 const (
-	OneSecond   Interval = "1s"
-	OneMinute            = "1m"
-	ThreeMinute          = "3m"
-	FiveMinute           = "5m"
-	FifteenMin           = "15m"
-	ThirtyMin            = "30m"
-	OneHour              = "1h"
-	TwoHour              = "2h"
-	OneDay               = "1d"
+	OneSecond   Frame = "1s"
+	OneMinute         = "1m"
+	ThreeMinute       = "3m"
+	FiveMinute        = "5m"
+	FifteenMin        = "15m"
+	ThirtyMin         = "30m"
+	OneHour           = "1h"
+	TwoHour           = "2h"
+	OneDay            = "1d"
 )
 
-type Market string
+type MarketType string
 
 const (
-	Spot    Market = "spot"
-	Futures        = "futures"
-	Option         = "option"
+	Spot    MarketType = "spot"
+	Futures            = "futures"
+	Option             = "option"
 )
 
 type Indicator string
@@ -43,43 +43,62 @@ const (
 )
 
 type HistoryAsset struct {
-	Market
+	MarketType
 	Frequency
-	Interval
+	Frame
 	Indicator
+	Market string
 
-	Date   time.Time
-	Symbol string
+	Date time.Time
 }
 
 func (q HistoryAsset) String() string {
-	return q.Link()
+	return q.SymbolDateAssetZipLink()
 }
 
-func (q HistoryAsset) Link() string {
-	if q.Market == "" {
-		q.Market = Spot
+// SymbolLink - is a link to a specific asset directory of a symbol
+func (q HistoryAsset) SymbolLink() string {
+	if q.MarketType == "" {
+		q.MarketType = Spot
 	}
-
 	if q.Frequency == "" {
 		q.Frequency = Monthly
 	}
-	if q.Interval == "" {
-		q.Interval = OneSecond
+	if q.Frame == "" {
+		q.Frame = OneSecond
 	}
 
 	if q.Indicator == "" {
 		q.Indicator = Klines
 	}
 
-	return fmt.Sprintf("data/%s/%s/%s/%s/%s/%s-%s-%s.zip",
-		q.Market,
+	return fmt.Sprintf("data/%s/%s/%s/%s",
+		q.MarketType,
 		q.Frequency,
 		q.Indicator,
-		q.Symbol,
-		q.Interval,
-		q.Symbol,
-		q.Interval,
+		q.Market,
+	)
+}
+
+// SymbolFrameLink - is a link to a specific asset and frame directory of zip files
+func (q HistoryAsset) SymbolFrameLink() string {
+	// AggTrades have no frames
+	if q.MarketType == AggTrades {
+		return fmt.Sprintf("%s", q.SymbolLink())
+	}
+
+	return fmt.Sprintf("%s/%s",
+		q.SymbolLink(),
+		q.Frame)
+}
+
+// SymbolDateAssetZipLink - is a link to a concrete asset zip file
+func (q HistoryAsset) SymbolDateAssetZipLink() string {
+
+	return fmt.Sprintf("%s/%s-%s-%s.zip",
+		q.SymbolFrameLink(),
+		q.Market,
+		q.Frame,
 		q.Date.Format("2006-01"),
 	)
 }

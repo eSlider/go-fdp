@@ -35,7 +35,7 @@ func TestNormalization(t *testing.T) {
 
 	})
 
-	t.Run("Link", func(t *testing.T) {
+	t.Run("SymbolDateAssetZipLink", func(t *testing.T) {
 		if path != "data/spot/monthly/klines/BTCUSDT/1m/BTCUSDT-1m-2021-01.zip" {
 			t.Errorf("unexpected path: %s", path)
 		}

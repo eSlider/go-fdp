@@ -23,13 +23,13 @@ func main() {
 	//prefix := "data/spot/monthly/klines/ETHUSDT/"
 
 	prefix := binance.HistoryAsset{
-		Market:    binance.Spot,
-		Frequency: binance.Daily,
-		Interval:  binance.OneMinute,
-		Indicator: binance.AggTrades,
-		Date:      time.Date(2021, 1, 1, 0, 0, 0, 0, time.UTC),
-		Symbol:    "ETHUSDT",
-	}.Link()
+		MarketType: binance.Spot,
+		Frequency:  binance.Daily,
+		Frame:      binance.OneMinute,
+		Indicator:  binance.AggTrades,
+		Date:       time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+		Market:     "ETHUSDT",
+	}.SymbolFrameLink()
 
 	ctx := context.Background()
 	srv, err := binance.NewHistoryConsumer(ctx)
