@@ -72,19 +72,20 @@ func (q HistoryAsset) SymbolLink() string {
 		q.Indicator = Klines
 	}
 
-	return fmt.Sprintf("data/%s/%s/%s/%s",
+	link := fmt.Sprintf("data/%s/%s/%s/%s",
 		q.MarketType,
 		q.Frequency,
 		q.Indicator,
 		q.Market,
 	)
+	return link
 }
 
 // SymbolFrameLink - is a link to a specific asset and frame directory of zip files
 func (q HistoryAsset) SymbolFrameLink() string {
-	// AggTrades have no frames
-	if q.MarketType == AggTrades {
-		return fmt.Sprintf("%s", q.SymbolLink())
+	// Indicator having no frame directories
+	if q.Indicator == AggTrades {
+		return q.SymbolLink()
 	}
 
 	return fmt.Sprintf("%s/%s",
