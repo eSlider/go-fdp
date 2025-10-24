@@ -22,14 +22,15 @@ import (
 func main() {
 	//prefix := "data/spot/monthly/klines/ETHUSDT/"
 
-	prefix := binance.HistoryAsset{
+	asset := binance.HistoryAsset{
 		MarketType: binance.Spot,
 		Frequency:  binance.Daily,
 		Frame:      binance.OneMinute,
 		Indicator:  binance.AggTrades,
 		Date:       time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 		Market:     "ETHUSDT",
-	}.SymbolFrameLink()
+	}
+	prefix := asset.SymbolFrameLink()
 
 	ctx := context.Background()
 	srv, err := binance.NewHistoryConsumer(ctx)
@@ -55,8 +56,20 @@ func main() {
 		zipBuffer := &data.Buffer{}
 
 		// Check if a file already exists locally
-		_, err := os.Stat(path)
-		if err == nil || !os.IsNotExist(err) {
+		inf, err := os.Stat(path)
+		isFileExists := inf != nil && inf.Size() > 0
+		if err != nil && os.IsNotExist(err) {
+			return err
+		}
+
+		// Check if file is empty
+		if inf.Size() < 1 {
+			// Remove file
+			os.Remove(path)
+			isFileExists = false
+		}
+
+		if isFileExists {
 			// ReadCSV existing file
 			fileContent, err := os.ReadFile(path)
 			if err != nil {
@@ -125,67 +138,71 @@ func main() {
 			}
 		}()
 
-		var klines []binance.Kline
-		err = data.ReadCSV[binance.Kline](csvData, func(k binance.Kline) error {
-			klines = append(klines, k)
-			return nil
-		})
+		if asset.Indicator == binance.Klines {
+			var klines []binance.Kline
+			err = data.ReadCSV[binance.Kline](csvData, func(k binance.Kline) error {
+				klines = append(klines, k)
+				return nil
+			})
 
-		// Store parquet file parallel to ZIP based on CSV
-		go func() {
-			wg.Add(1)
-			defer wg.Done()
+			// Store parquet file parallel to ZIP based on CSV
+			go func() {
+				wg.Add(1)
+				defer wg.Done()
 
-			parquetPath := strings.TrimSuffix(path, ".zip") + ".parquet"
+				parquetPath := strings.TrimSuffix(path, ".zip") + ".parquet"
 
-			// Check if parquet already exists
-			if _, err := os.Stat(parquetPath); err == nil {
-				log.Printf("Parquet file %s already exists, skipping", parquetPath)
-				return
-			}
-
-			// Create a directory if not exists
-			parquetDir := filepath.Dir(parquetPath)
-			if err := os.MkdirAll(parquetDir, 0755); err != nil {
-				log.Printf("failed to create directory for parquet %s: %v", parquetDir, err)
-				return
-			}
-
-			fw, err := local.NewLocalFileWriter(parquetPath)
-			if err != nil {
-				log.Println("Can't create local file", err)
-				return
-			}
-			defer fw.Close()
-			pw, err := writer.NewParquetWriter(fw, new(binance.Kline), 2)
-			if err != nil {
-				log.Println("Can't create parquet writer", err)
-				return
-			}
-			// len(csvData.Bytes())/6
-			pw.RowGroupSize = 1 * 1024 * 1024 // 1
-			pw.PageSize = 8 * 1024            // default 8K
-
-			// Recaluclate row group size and page size by number of rows and binance kline size
-
-			pw.CompressionType = parquet.CompressionCodec_ZSTD
-			defer pw.WriteStop()
-			for _, kline := range klines {
-
-				// Binance from 2025 has a new time format in microseconds, but before that it was milliseconds
-				// Check if CloseTime value is in milliseconds, then convert to microseconds
-				//if kline.CloseTime < 1000000 {
-				//	kline.CloseTime *= 1000
-				//}
-
-				// Write records to parquet
-				bkl := binance.NewParquetKline(&kline)
-				if err = pw.Write(bkl); err != nil {
-					log.Println("Write error", err)
+				// Check if parquet already exists
+				if _, err := os.Stat(parquetPath); err == nil {
+					log.Printf("Parquet file %s already exists, skipping", parquetPath)
+					return
 				}
-			}
-		}()
 
+				// Create a directory if not exists
+				parquetDir := filepath.Dir(parquetPath)
+				if err := os.MkdirAll(parquetDir, 0755); err != nil {
+					log.Printf("failed to create directory for parquet %s: %v", parquetDir, err)
+					return
+				}
+
+				fw, err := local.NewLocalFileWriter(parquetPath)
+				if err != nil {
+					log.Println("Can't create local file", err)
+					return
+				}
+				defer fw.Close()
+				pw, err := writer.NewParquetWriter(fw, new(binance.Kline), 2)
+				if err != nil {
+					log.Println("Can't create parquet writer", err)
+					return
+				}
+				// len(csvData.Bytes())/6
+				pw.RowGroupSize = 1 * 1024 * 1024 // 1
+				pw.PageSize = 8 * 1024            // default 8K
+
+				// Recaluclate row group size and page size by number of rows and binance kline size
+
+				pw.CompressionType = parquet.CompressionCodec_ZSTD
+				defer pw.WriteStop()
+				for _, kline := range klines {
+
+					// Binance from 2025 has a new time format in microseconds, but before that it was milliseconds
+					// Check if CloseTime value is in milliseconds, then convert to microseconds
+					//if kline.CloseTime < 1000000 {
+					//	kline.CloseTime *= 1000
+					//}
+
+					// Write records to parquet
+					bkl := binance.NewParquetKline(&kline)
+					if err = pw.Write(bkl); err != nil {
+						log.Println("Write error", err)
+					}
+				}
+			}()
+		} else {
+			// TODO: handle other indicators AggTrades and Trades
+			return nil
+		}
 		if err != nil {
 			return fmt.Errorf("error creating table: %v", err)
 		}
