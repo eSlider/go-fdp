@@ -4,7 +4,7 @@ import (
 	"encoding/csv"
 	"os"
 	"strings"
-	"sync-v3/binance"
+	"sync-v3/pkg/binance"
 	"testing"
 	"time"
 )
@@ -12,12 +12,18 @@ import (
 // Test normalization by getting zip file
 func TestNormalization(t *testing.T) {
 	path := binance.HistoryAsset{
-		Market:    binance.Spot,
-		Frequency: binance.Monthly,
-		Date:      time.Date(2021, 1, 1, 0, 0, 0, 0, time.UTC),
-		Interval:  binance.OneMinute,
-		Symbol:    "BTCUSDT",
-	}.Link()
+		MarketType: binance.Spot,
+		Frequency:  binance.Monthly,
+		Date:       time.Date(2021, 1, 1, 0, 0, 0, 0, time.UTC),
+		Frame:      binance.OneMinute,
+		Market:     "BTCUSDT",
+	}.SymbolDateAssetZipLink()
+
+	t.Run("SymbolDateAssetZipLink", func(t *testing.T) {
+		if path != "data/spot/monthly/klines/BTCUSDT/1m/BTCUSDT-1m-2021-01.zip" {
+			t.Errorf("unexpected path: %s", path)
+		}
+	})
 
 	t.Run("Candles typed and storage as parquet ", func(t *testing.T) {
 		from := "data/spot/monthly/klines/0GBNB/30m/0GBNB-30m-2025-09.csv"
@@ -33,12 +39,6 @@ func TestNormalization(t *testing.T) {
 			t.Errorf("unexpected comma: %c", reader.Comma)
 		}
 
-	})
-
-	t.Run("SymbolDateAssetZipLink", func(t *testing.T) {
-		if path != "data/spot/monthly/klines/BTCUSDT/1m/BTCUSDT-1m-2021-01.zip" {
-			t.Errorf("unexpected path: %s", path)
-		}
 	})
 
 	t.Run("Download", func(t *testing.T) {

@@ -106,14 +106,13 @@ func (q HistoryAsset) SymbolDateAssetZipLink() string {
 
 // Kline - binance kline data
 type Kline struct {
-	OpenTime   int64   `csv:"0"`
-	OpenPrice  float64 `csv:"1"`
-	HighPrice  float64 `csv:"2"`
-	LowPrice   float64 `csv:"3"`
-	ClosePrice float64 `csv:"4"`
-	Volume     float64 `csv:"5"`
-	CloseTime  int64   `csv:"6"`
-
+	OpenTime       int64   `csv:"0"`
+	OpenPrice      float64 `csv:"1"`
+	HighPrice      float64 `csv:"2"`
+	LowPrice       float64 `csv:"3"`
+	ClosePrice     float64 `csv:"4"`
+	Volume         float64 `csv:"5"`
+	CloseTime      int64   `csv:"6"`
 	QuoteVolume    float64 `csv:"7"`
 	NumberOfTrades int64   `csv:"8"`
 	TakerBuyVolume float64 `csv:"9"`
@@ -122,30 +121,115 @@ type Kline struct {
 }
 
 type ParquetKline struct {
-	OpenTime  int32 `parquet:"name=open_time, type=INT64, logicaltype=TIME,logicaltype.isadjustedtoutc=true, logicaltype.unit=MILLIS"`
-	CloseTime int32 `parquet:"name=close_time, type=INT64, logicaltype=TIME,logicaltype.isadjustedtoutc=true, logicaltype.unit=MILLIS"`
-	Candle
+	OpenTime  int64   `parquet:"name=open_time,type=INT64,logicaltype=TIME,logicaltype.isadjustedtoutc=true,logicaltype.unit=MILLIS"`
+	CloseTime int64   `parquet:"name=close_time,type=INT64,logicaltype=TIME,logicaltype.isadjustedtoutc=true,logicaltype.unit=MILLIS"`
+	Open      float64 `parquet:"name=open_price, type=DOUBLE"`
+	High      float64 `parquet:"name=high_price, type=DOUBLE"`
+	Low       float64 `parquet:"name=low_price, type=DOUBLE"`
+	Close     float64 `parquet:"name=close_price, type=DOUBLE"`
+	Volume    float64 `parquet:"name=volume, type=DOUBLE"`
 }
 
-type Candle struct {
-	Open   float64 `parquet:"name=open, type=DOUBLE"`
-	High   float64 `parquet:"name=high, type=DOUBLE"`
-	Low    float64 `parquet:"name=low, type=DOUBLE"`
-	Close  float64 `parquet:"name=close, type=DOUBLE"`
-	Volume float64 `parquet:"name=volume, type=DOUBLE"`
+// AggTrade - binance aggregated trade data
+// CSV columns order (as in Binance public data files):
+// 0: a (Aggregate tradeId)
+// 1: p (Price)
+// 2: q (Quantity)
+// 3: f (First tradeId)
+// 4: l (Last tradeId)
+// 5: T (Timestamp in milliseconds)
+// 6: m (Is buyer the market maker)
+// 7: M (Ignore)
+//
+// Example row:
+//
+//	743,309.77000000,0.35856000,804,805,1502958744048,False,True
+//
+// Ref: https://data.binance.vision/?prefix=data/spot/daily/aggTrades/
+// and Spot API docs: https://binance-docs.github.io/apidocs/spot/en/#compressed-aggregate-trades-list
+type AggTrade struct {
+	AggTradeID   int64   `csv:"0"` // a (Aggregate tradeId)
+	Price        float64 `csv:"1"` // p (Price)
+	Quantity     float64 `csv:"2"` // q (Quantity)
+	FirstTradeID int64   `csv:"3"` // f (First tradeId)
+	LastTradeID  int64   `csv:"4"` // l (Last tradeId)
+	Timestamp    int64   `csv:"5"` // T (Timestamp in milliseconds)
+	IsBuyerMaker bool    `csv:"6"` // m (Is buyer the market maker)
+	Ignore       bool    `csv:"7"` // M (Ignore)
+}
+
+type ParquetAggTrade struct {
+	Timestamp    int64   `parquet:"name=ts,type=INT64,type=INT64,logicaltype=TIME,logicaltype.isadjustedtoutc=true,logicaltype.unit=MILLIS"`
+	AggTradeID   int64   `parquet:"name=agg_trade_id,type=INT64,convertedtype=UINT_64"`
+	FirstTradeID int64   `parquet:"name=first_trade_id,type=INT64,convertedtype=UINT_64"`
+	LastTradeID  int64   `parquet:"name=last_trade_id,type=INT64,convertedtype=UINT_64"`
+	Price        float64 `parquet:"name=price,type=DOUBLE"`
+	Quantity     float64 `parquet:"name=quantity,type=DOUBLE"`
+	IsBuyerMaker bool    `parquet:"name=is_buyer_maker,type=BOOLEAN"`
+}
+
+func NewParquetAggTrade(a *AggTrade) *ParquetAggTrade {
+	// Check if the timestamp is milliseconds or microseconds
+	return &ParquetAggTrade{
+		Timestamp:    ToMs(a.Timestamp),
+		AggTradeID:   a.AggTradeID,
+		Price:        a.Price,
+		Quantity:     a.Quantity,
+		FirstTradeID: a.FirstTradeID,
+		LastTradeID:  a.LastTradeID,
+		IsBuyerMaker: a.IsBuyerMaker,
+	}
 }
 
 // NewParquetKline - optimize kline data for parquet
 func NewParquetKline(kline *Kline) *ParquetKline {
+	if kline == nil {
+		return nil
+	}
+
+	if kline.OpenTime == 0 {
+		return nil
+	}
+
 	return &ParquetKline{
-		OpenTime:  int32(kline.OpenTime),
-		CloseTime: int32(kline.CloseTime),
-		Candle: Candle{
-			Open:   kline.OpenPrice,
-			High:   kline.HighPrice,
-			Low:    kline.LowPrice,
-			Close:  kline.ClosePrice,
-			Volume: kline.Volume,
-		},
+		OpenTime:  ToMs(kline.OpenTime),
+		CloseTime: ToMs(kline.CloseTime),
+		Open:      kline.OpenPrice,
+		High:      kline.HighPrice,
+		Low:       kline.LowPrice,
+		Close:     kline.ClosePrice,
+		Volume:    kline.Volume,
+	}
+}
+
+func ToMs(ts int64) (v int64) {
+	tp := TypeOfTimestamp(ts)
+	switch tp {
+	case TimestampInMicros:
+		v = int64(ts / 1000)
+	case TimestampInSeconds:
+		v = int64(ts * 1000)
+	case TimestampInMillis:
+		v = int64(ts)
+	}
+	return v
+}
+
+type TimestampType int
+
+const (
+	TimestampInSeconds TimestampType = iota + 1
+	TimestampInMillis
+	TimestampInMicros
+)
+
+func TypeOfTimestamp(ts int64) TimestampType {
+	switch {
+	case ts > 1e18:
+		return TimestampInMicros
+	case ts > 1e12:
+		return TimestampInMillis
+	default:
+		return TimestampInSeconds
 	}
 }
