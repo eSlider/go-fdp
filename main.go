@@ -32,11 +32,11 @@ func main() {
 		MarketType: binance.Spot,
 		Frequency:  binance.Monthly,
 		//Frame:      binance.OneMinute,
-		Indicator: binance.AggTrades,
+		Indicator: binance.Klines,
 		Date:      date,
 		Market:    "ETHUSDT",
 	}
-	for info := range srv.Get(asset) {
+	for info := range srv.GetAsset(asset) {
 		if info.Err != nil {
 			log.Fatalf("could not ETL binance history asset: %s", err.Error())
 		}

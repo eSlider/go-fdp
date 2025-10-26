@@ -166,11 +166,11 @@ func (s *HistoryConsumer) DownloadAndExtract(
 
 // CacheZip - download and cache zip file
 func (s *HistoryConsumer) CacheZip(path string) (info chan *AssetETLInfo) {
+	info = make(chan *AssetETLInfo)
 	// Check if a file already locally exists
 	// ReadCSV existing file
 	go func() {
 		defer close(info)
-
 		// Do we cache the file?
 		if fs.FileExists(path) {
 			// Read zip
@@ -212,12 +212,12 @@ func (s *HistoryConsumer) CacheZip(path string) (info chan *AssetETLInfo) {
 	return info
 }
 
-// Get ETLBinanceHistoryAsset - download, extract, transform and load data from binance history assets
+// GetAsset ETLBinanceHistoryAsset - download, extract, transform and load data from binance history assets
 //   - If ZIP file already exists, load it from disk
 //   - If CSV file already exists, load it from disk
 //   - If a parquet file already exists, load it from disk
 //   - Check if a parquet file is empty, if so, delete it and recreate it
-func (s *HistoryConsumer) Get(asset *HistoryAsset) (info chan *AssetETLInfo) {
+func (s *HistoryConsumer) GetAsset(asset *HistoryAsset) (info chan *AssetETLInfo) {
 	prefix := asset.SymbolFrameLink()
 	info = make(chan *AssetETLInfo)
 
@@ -235,6 +235,8 @@ func (s *HistoryConsumer) Get(asset *HistoryAsset) (info chan *AssetETLInfo) {
 		}
 
 		go func() {
+			defer close(info)
+
 			// Collect all zip files
 			for zipInfo := range s.CacheZip(path) {
 				if zipInfo.Err != nil {
@@ -309,7 +311,6 @@ func (s *HistoryConsumer) Get(asset *HistoryAsset) (info chan *AssetETLInfo) {
 				}
 			}
 
-			close(info)
 		}()
 		//fmt.Printf("Found %d files\n", len(pths))
 	}

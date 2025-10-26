@@ -11,7 +11,7 @@ func ReadZip(path string) (buf *data.Buffer, err error) {
 	// ReadCSV existing file
 	var fc []byte
 
-	// Get reader for the file
+	// GetAsset reader for the file
 	fc, err = os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read existing file: %v", err)
