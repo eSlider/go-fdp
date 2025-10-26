@@ -40,11 +40,12 @@ func ReadCSV[T any](reader io.Reader, callback func(u *T) error) (err error) {
 // ReadCSVChan reads csv and sends records to channel
 func ReadCSVChan[T any](reader io.Reader) (ch chan *T, errCh chan error) {
 	ch = make(chan *T)
-	defer close(ch)
 	errCh = make(chan error)
-	defer close(errCh)
 
 	func() {
+		defer close(ch)
+		defer close(errCh)
+
 		t := new(T)
 		from := csv.NewReader(reader)
 		userHeader, err := csvutil.Header(*t, "csv")
@@ -73,5 +74,6 @@ func ReadCSVChan[T any](reader io.Reader) (ch chan *T, errCh chan error) {
 			ch <- &u
 		}
 	}()
+
 	return ch, errCh
 }

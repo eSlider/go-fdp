@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"sync-v3/pkg/binance"
 	"time"
@@ -37,9 +38,7 @@ func main() {
 		Market:    "ETHUSDT",
 	}
 	for info := range srv.GetAsset(asset) {
-		if info.Err != nil {
-			log.Fatalf("could not ETL binance history asset: %s", err.Error())
-		}
+		fmt.Println(info.Path)
 	}
 
 	log.Printf("ETL completed")
