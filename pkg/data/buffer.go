@@ -3,6 +3,8 @@ package data
 import (
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"sync"
 )
 
@@ -77,4 +79,24 @@ func (b *Buffer) Read(p []byte) (n int, err error) {
 		err = io.EOF
 	}
 	return n, err
+}
+
+// Persist writes the buffer to a file
+func (b *Buffer) Persist(path string) (err error) {
+	// Check already exists
+	if _, err := os.Stat(path); err == nil {
+		return fmt.Errorf("file %s already exists, skipping", err)
+	}
+
+	// Create a directory if not exists
+	csvDir := filepath.Dir(path)
+	if err := os.MkdirAll(csvDir, 0755); err != nil {
+		return fmt.Errorf("failed to create directory %s: %v", csvDir, err)
+	}
+
+	// Save file
+	if err := os.WriteFile(path, b.Bytes(), 0644); err != nil {
+		return fmt.Errorf("failed to write file %s: %v", path, err)
+	}
+	return
 }

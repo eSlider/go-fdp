@@ -2,8 +2,28 @@ package binance
 
 import (
 	"fmt"
+	"sync-v3/pkg/data"
 	"time"
 )
+
+// ETLStatus - represents asset processing status
+type ETLStatus int
+
+const (
+	DOWNLOADING ETLStatus = iota + 1
+	READING_ZIP
+	PERSISTED_ZIP
+	READING_CSV
+	TRANSFORMING
+	READING_PARQUET
+)
+
+type AssetETLInfo struct {
+	Status ETLStatus
+	Buffer *data.Buffer
+	Path   string
+	Err    error
+}
 
 type Frequency string
 
