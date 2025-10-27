@@ -10,13 +10,27 @@ import (
 // ETLStatus - represents asset processing status
 type ETLStatus int
 
+var StatusList = []string{
+	"error",
+	"downloading",
+	"reading_zip",
+	"persisting_zip",
+	"reading_csv",
+	"transforming",
+	"reading_parquet",
+}
+
+func (s *ETLStatus) String() any {
+	return StatusList[*s]
+}
+
 const (
 	StatusError ETLStatus = iota
 	StatusDownloading
 	StatusReadingZip
 	StatusPersistingZip
 	StatusReadingCsv
-	StatusTransofrming
+	StatusTransforming
 	StatusReadingParquet
 )
 

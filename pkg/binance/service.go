@@ -149,18 +149,20 @@ func (s *HistoryConsumer) DownloadAndTransform(
 				// Store CSV as structured data into duckdb hive partitioned table as parquet files
 				if asset.Indicator == Klines {
 					var klines []*ParquetKline
-					klineCh, csvErrCh := data.ReadCSVChan[Kline](csvBuffer)
-					pKlineCh := make(chan *ParquetKline)
-					prqErrCh := make(chan error)
 					parquetPath := strings.TrimSuffix(link, ".zip") + ".parquet"
-					go fs.WriteParquet[ParquetKline](parquetPath, pKlineCh, prqErrCh)
-
+					pKlineCh, prqErrCh := fs.WriteParquet[ParquetKline](parquetPath)
+					klineCh, csvErrCh := data.ReadCSVChan[Kline](csvBuffer)
 					for {
 						select {
+						case err, ok := <-prqErrCh:
+							if !ok {
+								break
+							}
+							fmt.Printf("Error writing parquet: %v\n", err)
 						case kline, ok := <-klineCh:
 							if !ok {
 								fmt.Println("klineCh closed")
-								return
+								break
 							}
 							pKlike := NewParquetKline(kline)
 							pKlineCh <- pKlike
@@ -172,18 +174,14 @@ func (s *HistoryConsumer) DownloadAndTransform(
 							if err != nil {
 								fmt.Printf("Error reading CSV: %v\n", err)
 							}
-							return
+							break
 						}
 					}
-					close(klineCh)
-					close(csvErrCh)
 
 				} else if asset.Indicator == AggTrades {
 					var aggTrades []*ParquetAggTrade
-					prqAggTradeCh := make(chan *ParquetAggTrade)
-					prqErrCh := make(chan error)
 					parquetPath := strings.TrimSuffix(link, ".zip") + ".parquet"
-					go fs.WriteParquet[ParquetAggTrade](parquetPath, prqAggTradeCh, prqErrCh)
+					prqAggTradeCh, _ := fs.WriteParquet[ParquetAggTrade](parquetPath)
 					err = data.ReadCSV[AggTrade](csvBuffer, func(a *AggTrade) error {
 						prqAggTrade := NewParquetAggTrade(a)
 						prqAggTradeCh <- prqAggTrade

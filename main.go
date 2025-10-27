@@ -32,29 +32,34 @@ func main() {
 	asset := &binance.HistoryAsset{
 		MarketType: binance.Spot,
 		Frequency:  binance.Monthly,
-		//Frame:      binance.OneMinute,
-		Indicator: binance.Klines,
-		Date:      date,
-		Market:    "ETHUSDT",
+		Frame:      binance.OneMinute,
+		Indicator:  binance.Klines,
+		Date:       date,
+		Market:     "ETHUSDT",
 	}
 
 	// Download and transform
 	infoCh, errCh := srv.DownloadAndTransform(asset)
 	for {
 		select {
-		case err := <-errCh:
+		case err, ok := <-errCh:
+			if !ok {
+				break
+			}
 			fmt.Println(err)
-		case info := <-infoCh:
-			fmt.Println(info)
+		case info, ok := <-infoCh:
+			if !ok {
+				break
+			}
+			fmt.Printf("Asset %s is %s", info.Path, info.Status.String())
 		default:
-		case <-time.After(time.Millisecond * 1):
+			<-time.After(time.Millisecond * 100)
 			fmt.Println("timeout")
 		}
 	}
 
+	log.Printf("ETL completed")
 	//for info := range srv.GetAsset(asset) {
 	//	fmt.Println(info.Path)
 	//}
-
-	log.Printf("ETL completed")
 }

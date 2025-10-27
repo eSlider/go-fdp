@@ -19,51 +19,51 @@ var (
 // WriteParquet writes records to parquet file
 func WriteParquet[T any](
 	path string,
-	rCh <-chan *T, // channel to read every record from and write to parquet until the channel is closed.
-	errCh chan<- error,
+) (
+	rCh chan *T, // channel to read every record from and write to parquet until the channel is closed.
+	errCh chan error,
 ) {
-	if FileExists(path) {
-		errCh <- errors.Join(ErrFileExists, fmt.Errorf("parquet file %s already exists, skipping", path))
-		return
-	}
+	rCh = make(chan *T)
+	errCh = make(chan error)
+	go func() {
+		defer close(errCh)
+		if FileExists(path) {
+			errCh <- errors.Join(ErrFileExists, fmt.Errorf("parquet file %s already exists, skipping", path))
+			return
+		}
 
-	// Create a directory if not exists
-	parquetDir := filepath.Dir(path)
-	if err := os.MkdirAll(parquetDir, 0755); err != nil {
-		errCh <- fmt.Errorf("failed to create directory for parquet %s: %v", parquetDir, err)
-		return
-	}
+		// Create a directory if not exists
+		parquetDir := filepath.Dir(path)
+		if err := os.MkdirAll(parquetDir, 0755); err != nil {
+			errCh <- fmt.Errorf("failed to create directory for parquet %s: %v", parquetDir, err)
+			return
+		}
 
-	fw, err := local.NewLocalFileWriter(path)
-	if err != nil {
-		errCh <- errors.Join(ErrWriteFile, fmt.Errorf("can't create local file: %v", err))
-		return
-	}
-	defer fw.Close()
+		fw, err := local.NewLocalFileWriter(path)
+		if err != nil {
+			errCh <- errors.Join(ErrWriteFile, fmt.Errorf("can't create local file: %v", err))
+			return
+		}
+		defer fw.Close()
 
-	pw, err := writer.NewParquetWriter(fw, new(T), 2)
-	if err != nil {
-		errCh <- errors.Join(ErrWriteFile, fmt.Errorf("can't create parquet writer: %v", err))
-		return
-	}
-	defer pw.WriteStop()
+		pw, err := writer.NewParquetWriter(fw, new(T), 2)
+		if err != nil {
+			errCh <- errors.Join(ErrWriteFile, fmt.Errorf("can't create parquet writer: %v", err))
+			return
+		}
+		defer pw.WriteStop()
 
-	// len(csvData.Bytes())/6
-	pw.RowGroupSize = 1 * 1024 * 1024                  // 1
-	pw.PageSize = 8 * 1024                             // default 8K
-	pw.CompressionType = parquet.CompressionCodec_ZSTD // Best compression and decompression speed
+		// len(csvData.Bytes())/6
+		pw.RowGroupSize = 1 * 1024 * 1024                  // 1
+		pw.PageSize = 8 * 1024                             // default 8K
+		pw.CompressionType = parquet.CompressionCodec_ZSTD // Best compression and decompression speed
 
-	// Read records from a channel
-	for {
-		select {
-		// Check if channel is closed
-		case entry, ok := <-rCh:
-			if ok == false {
-				return
-			}
+		// Read records from the channel until it is closed
+		for entry := range rCh {
 			if err = pw.Write(entry); err != nil {
 				errCh <- errors.Join(ErrWriteFile, fmt.Errorf("failed to write parquet file: %v", err))
 			}
 		}
-	}
+	}()
+	return
 }

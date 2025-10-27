@@ -84,8 +84,18 @@ func (b *Buffer) Read(p []byte) (n int, err error) {
 // Persist writes the buffer to a file
 func (b *Buffer) Persist(path string) (err error) {
 	// Check already exists
-	if _, err := os.Stat(path); err == nil {
-		return fmt.Errorf("file %s already exists, skipping", err)
+	inf, err := os.Stat(path)
+
+	// Remove file if it's empty'
+	if inf != nil && inf.Size() < 5 {
+		os.Remove(path)
+	}
+
+	// Check if file exists, without throwing error by checking if it's a directory'
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return fmt.Errorf("failed to stat file %s: %v", path, err)
+		}
 	}
 
 	// Create a directory if not exists
