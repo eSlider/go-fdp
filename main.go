@@ -11,24 +11,9 @@ import (
 )
 
 func main() {
-	ctx := context.Background()
-	srv, err := binance.NewHistoryConsumer(ctx)
-
+	srv, err := binance.NewHistoryConsumer(context.Background())
 	if err != nil {
 		log.Fatalf("could not initialize binance service: %s", err.Error())
-	}
-
-	fromDate := "2018-01-01"
-	date := time.Date(2018, 1, 1, 0, 0, 0, 0, time.UTC)
-
-	// transform string to time.Time
-	parse, err := time.Parse("2006-01-02", fromDate)
-	if err != nil {
-		log.Fatalf("could not parse date: %s", err.Error())
-	}
-
-	if date.Before(parse) {
-		log.Fatalf("date is before %s", fromDate)
 	}
 
 	asset := &binance.HistoryAsset{
@@ -36,7 +21,7 @@ func main() {
 		Frequency:  binance.Monthly,
 		Frame:      binance.OneMinute,
 		Indicator:  binance.Klines,
-		Date:       date,
+		Date:       time.Date(2018, 1, 1, 0, 0, 0, 0, time.UTC),
 		Market:     "ETHUSDT",
 	}
 
@@ -69,7 +54,4 @@ MainLoop:
 	}
 
 	log.Printf("ETL completed")
-	//for info := range srv.GetAsset(asset) {
-	//	fmt.Println(info.Path)
-	//}
 }
