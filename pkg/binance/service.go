@@ -125,7 +125,19 @@ func (s *HistoryConsumer) DownloadAndTransform(
 		}
 
 		link := asset.SymbolDateAssetZipLink()
+		parquetPath := strings.TrimSuffix(link, ".zip") + ".parquet"
 
+		// Check if a file already exists, then skip downloading, transforming and loading
+		if fs.FileExists(parquetPath) {
+			infoCh <- &AssetETLInfo{
+				Path:   parquetPath,
+				Status: StatusParquetDone,
+				Info:   fmt.Sprintf("Parquet file already exists: %s", parquetPath),
+			}
+			return
+		}
+
+		// Download and cache zip file
 		for zipInfo := range s.CacheZip(link) {
 			if zipInfo.Err != nil {
 				errCh <- errors.Join(zipInfo.Err, fmt.Errorf("error caching zip file: %v", zipInfo.Err))
@@ -150,23 +162,20 @@ func (s *HistoryConsumer) DownloadAndTransform(
 
 				// Store CSV as structured data into duckdb hive partitioned table as parquet files
 				if asset.Indicator == Klines {
-					var parquetKlines []*ParquetKline
-					parquetPath := strings.TrimSuffix(link, ".zip") + ".parquet"
-					parquetKlineCh, prqErrCh := fs.WriteParquet[ParquetKline](parquetPath)
 					csvKlineCh, csvErrCh := data.ReadCSVChan[Kline](csvBuffer)
-
-				MainLoop:
+					parquetKlineCh, prqErrCh := fs.WriteParquet[ParquetKline](parquetPath)
+					wroteKlines := 0
+				ETLLoop:
 					// Fan-in and lifecycle management
 					for {
 						select {
 						case csvKline, ok := <-csvKlineCh:
 							if !ok {
 								close(parquetKlineCh)
-								break MainLoop
+								break ETLLoop
 							}
-							parquetKline := NewParquetKline(csvKline)
-							parquetKlineCh <- parquetKline
-							parquetKlines = append(parquetKlines, parquetKline)
+							parquetKlineCh <- NewParquetKline(csvKline)
+							wroteKlines++
 							//infoCh <- &AssetETLInfo{
 							//	Path:   parquetPath,
 							//	Status: StatusTransforming,
@@ -174,7 +183,7 @@ func (s *HistoryConsumer) DownloadAndTransform(
 						case err, ok := <-csvErrCh:
 							if !ok {
 								close(parquetKlineCh)
-								break MainLoop
+								break ETLLoop
 							}
 							infoCh <- &AssetETLInfo{
 								Path:   parquetPath,
@@ -196,7 +205,7 @@ func (s *HistoryConsumer) DownloadAndTransform(
 					infoCh <- &AssetETLInfo{
 						Path:   parquetPath,
 						Status: StatusParquetDone,
-						Info:   fmt.Sprintf("Wrote %d parquetKlines to parquet", len(parquetKlines)),
+						Info:   fmt.Sprintf("Wrote %d parquetKlines to parquet", wroteKlines),
 					}
 				} else if asset.Indicator == AggTrades {
 					var aggTrades []*ParquetAggTrade

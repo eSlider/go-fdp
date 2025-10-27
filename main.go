@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"sync-v3/pkg/binance"
+	"sync-v3/pkg/fs"
 	"time"
 )
 
@@ -48,6 +50,9 @@ MainLoop:
 			if !ok {
 				break MainLoop
 			}
+			if errors.Is(err, fs.ErrFileExists) {
+				break MainLoop
+			}
 			fmt.Println(err)
 		case info, ok := <-infoCh:
 			if !ok {
@@ -57,9 +62,9 @@ MainLoop:
 			if info.Status == binance.StatusError {
 				fmt.Printf("Error %v", info.Err)
 			}
-		default:
-			<-time.After(time.Millisecond * 100)
-			fmt.Println("timeout")
+			//default:
+			//	<-time.After(time.Millisecond * 100)
+			//	fmt.Println("timeout")
 		}
 	}
 

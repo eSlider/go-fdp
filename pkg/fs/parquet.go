@@ -27,6 +27,7 @@ func WriteParquet[T any](
 	errCh = make(chan error)
 	go func() {
 		defer close(errCh)
+		//os.Remove(path)
 		if FileExists(path) {
 			errCh <- errors.Join(ErrFileExists, fmt.Errorf("parquet file %s already exists, skipping", path))
 			return
