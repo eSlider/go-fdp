@@ -150,40 +150,54 @@ func (s *HistoryConsumer) DownloadAndTransform(
 
 				// Store CSV as structured data into duckdb hive partitioned table as parquet files
 				if asset.Indicator == Klines {
-					var klines []*ParquetKline
+					var parquetKlines []*ParquetKline
 					parquetPath := strings.TrimSuffix(link, ".zip") + ".parquet"
-					pKlineCh, prqErrCh := fs.WriteParquet[ParquetKline](parquetPath)
-					klineCh, csvErrCh := data.ReadCSVChan[Kline](csvBuffer)
+					parquetKlineCh, prqErrCh := fs.WriteParquet[ParquetKline](parquetPath)
+					csvKlineCh, csvErrCh := data.ReadCSVChan[Kline](csvBuffer)
 
+				MainLoop:
 					// Fan-in and lifecycle management
-					for kCh, eCh, pErrCh := klineCh, csvErrCh, prqErrCh; kCh != nil || eCh != nil || pErrCh != nil; {
+					for {
 						select {
-						case kline, ok := <-kCh:
+						case csvKline, ok := <-csvKlineCh:
 							if !ok {
-								kCh = nil
-								close(pKlineCh)
+								close(parquetKlineCh)
+								break MainLoop
+							}
+							parquetKline := NewParquetKline(csvKline)
+							parquetKlineCh <- parquetKline
+							parquetKlines = append(parquetKlines, parquetKline)
+							//infoCh <- &AssetETLInfo{
+							//	Path:   parquetPath,
+							//	Status: StatusTransforming,
+							//}
+						case err, ok := <-csvErrCh:
+							if !ok {
+								close(parquetKlineCh)
+								break MainLoop
+							}
+							infoCh <- &AssetETLInfo{
+								Path:   parquetPath,
+								Status: StatusError,
+								Err:    fmt.Errorf("error reading csv: %v", err),
+							}
+						case err, ok := <-prqErrCh:
+							if !ok {
 								continue
 							}
-							pK := NewParquetKline(kline)
-							pKlineCh <- pK
-							klines = append(klines, pK)
-						case err, ok := <-eCh:
-							if !ok {
-								eCh = nil
-								continue
+							infoCh <- &AssetETLInfo{
+								Path:   parquetPath,
+								Status: StatusError,
+								Err:    fmt.Errorf("error writing parquet: %v", err),
 							}
-							if err != nil {
-								fmt.Printf("Error reading CSV: %v\n", err)
-							}
-						case err, ok := <-pErrCh:
-							if !ok {
-								pErrCh = nil
-								continue
-							}
-							fmt.Printf("Error writing parquet: %v\n", err)
 						}
 					}
 
+					infoCh <- &AssetETLInfo{
+						Path:   parquetPath,
+						Status: StatusParquetDone,
+						Info:   fmt.Sprintf("Wrote %d parquetKlines to parquet", len(parquetKlines)),
+					}
 				} else if asset.Indicator == AggTrades {
 					var aggTrades []*ParquetAggTrade
 					parquetPath := strings.TrimSuffix(link, ".zip") + ".parquet"

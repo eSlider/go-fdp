@@ -31,7 +31,7 @@ const (
 	StatusPersistingZip
 	StatusReadingCsv
 	StatusTransforming
-	StatusReadingParquet
+	StatusParquetDone
 )
 
 type AssetETLInfo struct {
@@ -39,6 +39,7 @@ type AssetETLInfo struct {
 	Buffer *data.Buffer
 	Path   string
 	Err    error
+	Info   string
 }
 
 type Frequency string

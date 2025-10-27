@@ -16,8 +16,8 @@ func main() {
 		log.Fatalf("could not initialize binance service: %s", err.Error())
 	}
 
-	fromDate := "2024-01-01"
-	date := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	fromDate := "2018-01-01"
+	date := time.Date(2018, 1, 1, 0, 0, 0, 0, time.UTC)
 
 	// transform string to time.Time
 	parse, err := time.Parse("2006-01-02", fromDate)
@@ -40,18 +40,23 @@ func main() {
 
 	// Download and transform
 	infoCh, errCh := srv.DownloadAndTransform(asset)
+
+MainLoop:
 	for {
 		select {
 		case err, ok := <-errCh:
 			if !ok {
-				break
+				break MainLoop
 			}
 			fmt.Println(err)
 		case info, ok := <-infoCh:
 			if !ok {
-				break
+				break MainLoop
 			}
 			fmt.Printf("Asset %s is %s", info.Path, info.Status.String())
+			if info.Status == binance.StatusError {
+				fmt.Printf("Error %v", info.Err)
+			}
 		default:
 			<-time.After(time.Millisecond * 100)
 			fmt.Println("timeout")
