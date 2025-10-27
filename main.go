@@ -37,9 +37,24 @@ func main() {
 		Date:      date,
 		Market:    "ETHUSDT",
 	}
-	for info := range srv.GetAsset(asset) {
-		fmt.Println(info.Path)
+
+	// Download and transform
+	infoCh, errCh := srv.DownloadAndTransform(asset)
+	for {
+		select {
+		case err := <-errCh:
+			fmt.Println(err)
+		case info := <-infoCh:
+			fmt.Println(info)
+		default:
+		case <-time.After(time.Millisecond * 1):
+			fmt.Println("timeout")
+		}
 	}
+
+	//for info := range srv.GetAsset(asset) {
+	//	fmt.Println(info.Path)
+	//}
 
 	log.Printf("ETL completed")
 }

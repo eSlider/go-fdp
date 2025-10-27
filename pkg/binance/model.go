@@ -2,6 +2,7 @@ package binance
 
 import (
 	"fmt"
+	"strings"
 	"sync-v3/pkg/data"
 	"time"
 )
@@ -10,12 +11,13 @@ import (
 type ETLStatus int
 
 const (
-	DOWNLOADING ETLStatus = iota + 1
-	READING_ZIP
-	PERSISTED_ZIP
-	READING_CSV
-	TRANSFORMING
-	READING_PARQUET
+	StatusError ETLStatus = iota
+	StatusDownloading
+	StatusReadingZip
+	StatusPersistingZip
+	StatusReadingCsv
+	StatusTransofrming
+	StatusReadingParquet
 )
 
 type AssetETLInfo struct {
@@ -44,6 +46,43 @@ const (
 	OneHour           = "1h"
 	TwoHour           = "2h"
 	OneDay            = "1d"
+)
+
+type FutureType string
+
+func (f FutureType) String() string {
+	return string(f)
+}
+
+const (
+	FutureTypeCm FutureType = "cm" // Case Management
+	FutureTypeUm            = "um" // Utilization Management
+)
+
+type FutureData string
+
+const (
+	// FutureDataAggTrades
+	// 	- https://data.binance.vision/data/futures/um/daily/aggTrades/ACHUSDT/ACHUSDT-aggTrades-2025-10-26.zip
+	FutureDataAggTrades FutureData = "aggTrades"
+
+	// FutureDataBookDepth
+	//	- https://data.binance.vision/data/futures/um/daily/bookDepth/AGIXBUSD/AGIXBUSD-bookDepth-2023-07-20.zip
+	FutureDataBookDepth = "bookDepth"
+
+	// FutureDataBookTicker
+	//	- https://data.binance.vision/data/futures/um/daily/bookTicker/AGIXBUSD/AGIXBUSD-bookTicker-2023-07-20.zip
+	FutureDataBookTicker = "bookTicker"
+
+	// FutureDataIndexPriceKline https://data.binance.vision/data/futures/um/daily/indexPriceKlines/BTCUSDT/1m/BTCUSDT-1m-2025-10-26.zip
+	FutureDataIndexPriceKline = "indexPriceKline"
+
+	// FutureDataKlines https://data.binance.vision/data/futures/um/daily/klines/BTCUSDT/1m/BTCUSDT-1m-2025-10-26.zip
+	FutureDataKlines             = "klines"
+	FutureDataMarkPriceKlines    = "markPriceKline"
+	FutureDataMetrics            = "metrics"
+	FutureDataPremiumIndexKlines = "premiumIndexKline"
+	FutureDataTrades             = "trades"
 )
 
 type MarketType string
@@ -85,9 +124,8 @@ func (q HistoryAsset) SymbolLink() string {
 		q.Frequency = Monthly
 	}
 	if q.Frame == "" {
-		q.Frame = OneSecond
+		q.Frame = OneMinute
 	}
-
 	if q.Indicator == "" {
 		q.Indicator = Klines
 	}
@@ -104,24 +142,82 @@ func (q HistoryAsset) SymbolLink() string {
 // SymbolFrameLink - is a link to a specific asset and frame directory of zip files
 func (q HistoryAsset) SymbolFrameLink() string {
 	// Indicator having no frame directories
-	if q.Indicator == AggTrades {
-		return q.SymbolLink()
+	if q.Indicator == Klines {
+		return fmt.Sprintf("%s/%s",
+			q.SymbolLink(),
+			q.Frame)
 	}
+	return q.SymbolLink()
 
-	return fmt.Sprintf("%s/%s",
-		q.SymbolLink(),
-		q.Frame)
 }
 
 // SymbolDateAssetZipLink - is a link to a concrete asset zip file
 func (q HistoryAsset) SymbolDateAssetZipLink() string {
+	var layout string
+	switch q.Frequency {
+	case Monthly:
+		layout = "2006-01"
+	case Daily:
+		layout = "2006-01-02"
 
-	return fmt.Sprintf("%s/%s-%s-%s.zip",
-		q.SymbolFrameLink(),
-		q.Market,
-		q.Frame,
-		q.Date.Format("2006-01"),
-	)
+	}
+	switch q.Indicator {
+	case Klines:
+		return fmt.Sprintf("%s/%s-%s-%s.zip",
+			q.SymbolFrameLink(),
+			q.Market,
+			q.Frame,
+			q.Date.Format(layout))
+	default:
+		return fmt.Sprintf("%s/%s-%s-%s.zip",
+			q.SymbolLink(),
+			q.Market,
+			q.Indicator,
+			q.Date.Format(layout))
+	}
+}
+
+// NewHistoryAssetByPath parse path to asset
+// Example: - data/spot/monthly/klines/ETHUSDT/1m/ETHUSDT-1m-2023-06.zip
+func NewHistoryAssetByPath(path string) (a *HistoryAsset, err error) {
+
+	chunks := strings.Split(path, "/")
+	a = &HistoryAsset{
+		MarketType: MarketType(chunks[1]),
+		Frequency:  Frequency(chunks[2]),
+		Indicator:  Indicator(chunks[3]),
+		Market:     chunks[4],
+	}
+
+	// Latest chunk is the file name
+	fileName := strings.TrimRight(chunks[len(chunks)-1], ".zip")
+	fileNameChunks := strings.Split(fileName, "-")
+	l := len(fileNameChunks)
+
+	switch a.Frequency {
+	case Monthly: // Example: BTCUSDT-aggTrades-2025-10.zip
+		a.Date, err = time.Parse("2006-01", fmt.Sprintf("%s-%s",
+			fileNameChunks[l-2],
+			fileNameChunks[l-1]))
+	case Daily: // Example: BTCUSDT-aggTrades-2025-10-26.zip
+		a.Date, err = time.Parse("2006-01-02",
+			fmt.Sprintf("%s-%s-%s", fileNameChunks[l-3], fileNameChunks[l-2], fileNameChunks[l-1]))
+	}
+
+	switch a.Indicator {
+	case Klines:
+		a.Frame = Frame(chunks[5])
+	}
+
+	return
+}
+
+// IsZipLink - is a link to a concrete asset zip file
+func (q HistoryAsset) IsZipLink() bool {
+	if q.Date.IsZero() || q.Frame == "" || q.Market == "" {
+		return false
+	}
+	return true
 }
 
 // Kline - binance kline data

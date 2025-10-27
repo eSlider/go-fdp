@@ -3,6 +3,7 @@ package binance
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -103,8 +104,106 @@ func (s *HistoryConsumer) List(path string) (ch chan ListResult) {
 	return ch
 }
 
-// data/spot/monthly/klines/ETHUSDT/1m/ETHUSDT-1m-2023-06.zip
-// data/spot/monthly/klines/ETHUSDT/1m/ETHUSDT-1m-2023-06.zip
+var ErrNotZipLink = fmt.Errorf("not found")
+
+func (s *HistoryConsumer) DownloadAndTransform(
+	asset *HistoryAsset,
+) (
+	infoCh chan *AssetETLInfo,
+	errCh chan error,
+) {
+	infoCh = make(chan *AssetETLInfo)
+	errCh = make(chan error)
+
+	if !asset.IsZipLink() {
+		errCh <- errors.Join(ErrNotZipLink, fmt.Errorf("invalid asset: %s", asset))
+	}
+
+	link := asset.SymbolDateAssetZipLink()
+	go func() {
+		defer close(infoCh)
+		defer close(errCh)
+
+		for zipInfo := range s.CacheZip(link) {
+			if zipInfo.Err != nil {
+				errCh <- errors.Join(zipInfo.Err, fmt.Errorf("error caching zip file: %v", zipInfo.Err))
+				continue
+			}
+
+			if zipInfo.Status == StatusReadingZip {
+				// Decompress ZIP file
+				csvBuffer, err := data.Decompress(zipInfo.Buffer.Bytes())
+				if err != nil {
+					errCh <- fmt.Errorf("error decompressing zip file: %v", err)
+					continue
+				}
+				// Store CSV file parallel to ZIP
+				csvPath := strings.TrimSuffix(link, ".zip") + ".csv"
+				infoCh <- &AssetETLInfo{
+					Path:   csvPath,
+					Status: StatusReadingCsv,
+					Buffer: csvBuffer,
+					Err:    csvBuffer.Persist(csvPath),
+				}
+
+				// Store CSV as structured data into duckdb hive partitioned table as parquet files
+				if asset.Indicator == Klines {
+					var klines []*ParquetKline
+					klineCh, csvErrCh := data.ReadCSVChan[Kline](csvBuffer)
+					pKlineCh := make(chan *ParquetKline)
+					prqErrCh := make(chan error)
+					parquetPath := strings.TrimSuffix(link, ".zip") + ".parquet"
+					go fs.WriteParquet[ParquetKline](parquetPath, pKlineCh, prqErrCh)
+
+					for {
+						select {
+						case kline, ok := <-klineCh:
+							if !ok {
+								fmt.Println("klineCh closed")
+								return
+							}
+							pKlike := NewParquetKline(kline)
+							pKlineCh <- pKlike
+							klines = append(klines, pKlike)
+						case err, ok := <-csvErrCh:
+							if !ok {
+								fmt.Println("csvErrCh closed")
+							}
+							if err != nil {
+								fmt.Printf("Error reading CSV: %v\n", err)
+							}
+							return
+						}
+					}
+					close(klineCh)
+					close(csvErrCh)
+
+				} else if asset.Indicator == AggTrades {
+					var aggTrades []*ParquetAggTrade
+					prqAggTradeCh := make(chan *ParquetAggTrade)
+					prqErrCh := make(chan error)
+					parquetPath := strings.TrimSuffix(link, ".zip") + ".parquet"
+					go fs.WriteParquet[ParquetAggTrade](parquetPath, prqAggTradeCh, prqErrCh)
+					err = data.ReadCSV[AggTrade](csvBuffer, func(a *AggTrade) error {
+						prqAggTrade := NewParquetAggTrade(a)
+						prqAggTradeCh <- prqAggTrade
+						aggTrades = append(aggTrades, prqAggTrade)
+						return nil
+					})
+					if err != nil {
+						fmt.Printf("Error reading CSV: %v\n", err)
+					}
+				}
+			}
+		}
+
+	}()
+	return
+}
+
+// Download file from S3
+//
+//	Example: - data/spot/monthly/klines/ETHUSDT/1m/ETHUSDT-1m-2023-06.zip
 func (s *HistoryConsumer) Download(path string, w io.WriterAt) (n int64, err error) {
 	download, err := s.downloader.Download(s.ctx, w, &s3.GetObjectInput{
 		Bucket: aws.String(s.bucket),
@@ -114,56 +213,6 @@ func (s *HistoryConsumer) Download(path string, w io.WriterAt) (n int64, err err
 		//VersionId:                  nil,
 	})
 	return download, err
-}
-
-func (s *HistoryConsumer) DownloadAndExtract(
-	asset HistoryAsset,
-) (info chan *AssetETLInfo) {
-	prefix := asset.SymbolFrameLink()
-	pths := make([]string, 0)
-	info = make(chan *AssetETLInfo)
-
-	for result := range s.List(prefix) {
-		if result.Err != nil {
-			log.Printf("error listing files: %v", result.Err)
-			continue
-		}
-
-		path := *result.Key
-
-		// Skip CHECKSUM and folders
-		if strings.HasSuffix(path, "CHECKSUM") || strings.HasSuffix(path, "/") {
-			continue
-		}
-
-		pths = append(pths, path)
-
-		// Collect all zip files
-		for zipInfo := range s.CacheZip(path) {
-			if zipInfo.Err != nil {
-				log.Printf("error caching zip file: %v", zipInfo.Err)
-				continue
-			}
-
-			if zipInfo.Status != READING_ZIP {
-				// Decompress ZIP file
-				csvBuffer, err := data.Decompress(zipInfo.Buffer.Bytes())
-				if err != nil {
-					log.Printf("error decompressing zip file: %v", err)
-					continue
-				}
-				// Store CSV file parallel to ZIP
-				csvPath := strings.TrimSuffix(path, ".zip") + ".csv"
-				info <- &AssetETLInfo{
-					Path:   path,
-					Status: READING_CSV,
-					Buffer: csvBuffer,
-					Err:    csvBuffer.Persist(csvPath),
-				}
-			}
-		}
-	}
-	return
 }
 
 // CacheZip - download and cache zip file
@@ -179,7 +228,7 @@ func (s *HistoryConsumer) CacheZip(path string) (info chan *AssetETLInfo) {
 			buf, err := fs.ReadZip(path)
 			info <- &AssetETLInfo{
 				Path:   path,
-				Status: READING_ZIP,
+				Status: StatusReadingZip,
 				Buffer: buf,
 				Err:    err,
 			}
@@ -190,12 +239,12 @@ func (s *HistoryConsumer) CacheZip(path string) (info chan *AssetETLInfo) {
 			buf := &data.Buffer{}
 			info <- &AssetETLInfo{
 				Path:   path,
-				Status: DOWNLOADING,
+				Status: StatusDownloading,
 			}
 			_, err1 := s.Download(path, buf)
 			a := &AssetETLInfo{
 				Path:   path,
-				Status: READING_ZIP,
+				Status: StatusReadingZip,
 				Buffer: buf,
 				Err:    err1,
 			}
@@ -204,7 +253,7 @@ func (s *HistoryConsumer) CacheZip(path string) (info chan *AssetETLInfo) {
 			// ReadCSV existing file
 			info <- &AssetETLInfo{
 				Path:   path,
-				Status: PERSISTED_ZIP,
+				Status: StatusPersistingZip,
 				Buffer: buf,
 				Err:    buf.Persist(path),
 			}
@@ -226,11 +275,15 @@ func (s *HistoryConsumer) GetAsset(asset *HistoryAsset) (info chan *AssetETLInfo
 
 	go func() {
 		for result := range s.List(prefix) {
+			// Handle error
 			if result.Err != nil {
-				log.Printf("error listing files: %v", result.Err)
+				info <- &AssetETLInfo{
+					Path:   *result.Key,
+					Status: StatusError,
+					Err:    fmt.Errorf("error listing files: %v", result.Err),
+				}
 				continue
 			}
-
 			path := *result.Key
 
 			// Skip CHECKSUM and folders
@@ -238,83 +291,28 @@ func (s *HistoryConsumer) GetAsset(asset *HistoryAsset) (info chan *AssetETLInfo
 				continue
 			}
 
-			go func() {
+			zipAsset, err := NewHistoryAssetByPath(path)
+			if err != nil {
+				info <- &AssetETLInfo{
+					Path:   path,
+					Status: StatusError,
+					Err:    fmt.Errorf("error creating asset path: %v", err),
+				}
+			}
 
-				// Collect all zip files
-				for zipInfo := range s.CacheZip(path) {
-					if zipInfo.Err != nil {
-						log.Printf("error caching zip file: %v", zipInfo.Err)
-						continue
-					}
-
-					if zipInfo.Status == READING_ZIP {
-						// Decompress ZIP file
-						csvBuffer, err := data.Decompress(zipInfo.Buffer.Bytes())
-						if err != nil {
-							log.Printf("error decompressing zip file: %v", err)
-							continue
-						}
-						// Store CSV file parallel to ZIP
-						csvPath := strings.TrimSuffix(path, ".zip") + ".csv"
-						info <- &AssetETLInfo{
-							Path:   path,
-							Status: READING_CSV,
-							Buffer: csvBuffer,
-							Err:    csvBuffer.Persist(csvPath),
-						}
-
-						// Store CSV as structured data into duckdb hive partitioned table as parquet files
-						if asset.Indicator == Klines {
-							var klines []*ParquetKline
-							klineCh, csvErrCh := data.ReadCSVChan[Kline](csvBuffer)
-							pKlineCh := make(chan *ParquetKline)
-							prqErrCh := make(chan error)
-							parquetPath := strings.TrimSuffix(path, ".zip") + ".parquet"
-							go fs.WriteParquet[ParquetKline](parquetPath, pKlineCh, prqErrCh)
-
-							for {
-								select {
-								case kline, ok := <-klineCh:
-									if !ok {
-										fmt.Println("klineCh closed")
-										return
-									}
-									pKlike := NewParquetKline(kline)
-									pKlineCh <- pKlike
-									klines = append(klines, pKlike)
-								case err, ok := <-csvErrCh:
-									if !ok {
-										fmt.Println("csvErrCh closed")
-									}
-									if err != nil {
-										fmt.Printf("Error reading CSV: %v\n", err)
-									}
-									return
-								}
-							}
-							close(klineCh)
-							close(csvErrCh)
-
-						} else if asset.Indicator == AggTrades {
-							var aggTrades []*ParquetAggTrade
-							prqAggTradeCh := make(chan *ParquetAggTrade)
-							prqErrCh := make(chan error)
-							parquetPath := strings.TrimSuffix(path, ".zip") + ".parquet"
-							go fs.WriteParquet[ParquetAggTrade](parquetPath, prqAggTradeCh, prqErrCh)
-							err = data.ReadCSV[AggTrade](csvBuffer, func(a *AggTrade) error {
-								prqAggTrade := NewParquetAggTrade(a)
-								prqAggTradeCh <- prqAggTrade
-								aggTrades = append(aggTrades, prqAggTrade)
-								return nil
-							})
-							if err != nil {
-								fmt.Printf("Error reading CSV: %v\n", err)
-							}
-						}
+			assetInfoCh, assetErrCh := s.DownloadAndTransform(zipAsset)
+			for {
+				select {
+				case assetInfo := <-assetInfoCh:
+					info <- assetInfo
+				case assetErr := <-assetErrCh:
+					info <- &AssetETLInfo{
+						Path:   path,
+						Status: StatusError,
+						Err:    fmt.Errorf("error downloading and transforming asset: %v", assetErr),
 					}
 				}
-
-			}()
+			}
 			//fmt.Printf("Found %d files\n", len(pths))
 		}
 		close(info)
