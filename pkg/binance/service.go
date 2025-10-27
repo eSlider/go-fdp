@@ -115,14 +115,16 @@ func (s *HistoryConsumer) DownloadAndTransform(
 	infoCh = make(chan *AssetETLInfo)
 	errCh = make(chan error)
 
-	if !asset.IsZipLink() {
-		errCh <- errors.Join(ErrNotZipLink, fmt.Errorf("invalid asset: %s", asset))
-	}
-
-	link := asset.SymbolDateAssetZipLink()
 	go func() {
 		defer close(infoCh)
 		defer close(errCh)
+
+		if !asset.IsZipLink() {
+			errCh <- errors.Join(ErrNotZipLink, fmt.Errorf("invalid asset: %s", asset))
+			return
+		}
+
+		link := asset.SymbolDateAssetZipLink()
 
 		for zipInfo := range s.CacheZip(link) {
 			if zipInfo.Err != nil {
@@ -152,42 +154,53 @@ func (s *HistoryConsumer) DownloadAndTransform(
 					parquetPath := strings.TrimSuffix(link, ".zip") + ".parquet"
 					pKlineCh, prqErrCh := fs.WriteParquet[ParquetKline](parquetPath)
 					klineCh, csvErrCh := data.ReadCSVChan[Kline](csvBuffer)
-					for {
+
+					// Fan-in and lifecycle management
+					for kCh, eCh, pErrCh := klineCh, csvErrCh, prqErrCh; kCh != nil || eCh != nil || pErrCh != nil; {
 						select {
-						case err, ok := <-prqErrCh:
+						case kline, ok := <-kCh:
 							if !ok {
-								break
+								kCh = nil
+								close(pKlineCh)
+								continue
 							}
-							fmt.Printf("Error writing parquet: %v\n", err)
-						case kline, ok := <-klineCh:
+							pK := NewParquetKline(kline)
+							pKlineCh <- pK
+							klines = append(klines, pK)
+						case err, ok := <-eCh:
 							if !ok {
-								fmt.Println("klineCh closed")
-								break
-							}
-							pKlike := NewParquetKline(kline)
-							pKlineCh <- pKlike
-							klines = append(klines, pKlike)
-						case err, ok := <-csvErrCh:
-							if !ok {
-								fmt.Println("csvErrCh closed")
+								eCh = nil
+								continue
 							}
 							if err != nil {
 								fmt.Printf("Error reading CSV: %v\n", err)
 							}
-							break
+						case err, ok := <-pErrCh:
+							if !ok {
+								pErrCh = nil
+								continue
+							}
+							fmt.Printf("Error writing parquet: %v\n", err)
 						}
 					}
 
 				} else if asset.Indicator == AggTrades {
 					var aggTrades []*ParquetAggTrade
 					parquetPath := strings.TrimSuffix(link, ".zip") + ".parquet"
-					prqAggTradeCh, _ := fs.WriteParquet[ParquetAggTrade](parquetPath)
+					prqAggTradeCh, prqErrCh := fs.WriteParquet[ParquetAggTrade](parquetPath)
+					defer func() {
+						// Ensure we drain errors if any are produced while we were writing
+						for err := range prqErrCh {
+							fmt.Printf("Error writing parquet: %v\n", err)
+						}
+					}()
 					err = data.ReadCSV[AggTrade](csvBuffer, func(a *AggTrade) error {
 						prqAggTrade := NewParquetAggTrade(a)
 						prqAggTradeCh <- prqAggTrade
 						aggTrades = append(aggTrades, prqAggTrade)
 						return nil
 					})
+					close(prqAggTradeCh)
 					if err != nil {
 						fmt.Printf("Error reading CSV: %v\n", err)
 					}
@@ -299,11 +312,19 @@ func (s *HistoryConsumer) GetAsset(asset *HistoryAsset) (info chan *AssetETLInfo
 			}
 
 			assetInfoCh, assetErrCh := s.DownloadAndTransform(zipAsset)
-			for {
+			for inCh, erCh := assetInfoCh, assetErrCh; inCh != nil || erCh != nil; {
 				select {
-				case assetInfo := <-assetInfoCh:
+				case assetInfo, ok := <-inCh:
+					if !ok {
+						inCh = nil
+						continue
+					}
 					info <- assetInfo
-				case assetErr := <-assetErrCh:
+				case assetErr, ok := <-erCh:
+					if !ok {
+						erCh = nil
+						continue
+					}
 					info <- &AssetETLInfo{
 						Path:   path,
 						Status: StatusError,

@@ -42,7 +42,7 @@ func ReadCSVChan[T any](reader io.Reader) (ch chan *T, errCh chan error) {
 	ch = make(chan *T)
 	errCh = make(chan error)
 
-	func() {
+	go func() {
 		defer close(ch)
 		defer close(errCh)
 
