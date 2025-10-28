@@ -161,24 +161,6 @@ func TestWriteParquet(t *testing.T) {
 	})
 }
 
-func TestWriteParquetErrors(t *testing.T) {
-	t.Run("handles directory creation failure", func(t *testing.T) {
-		// Try to create a file in a directory that can't be created
-		// This is tricky to test reliably, but we can try with a very long path
-		// or use a read-only directory, but that might not work on all systems
-
-		// For now, we'll skip this test as it's hard to reliably trigger
-		// directory creation failure in a cross-platform way
-		t.Skip("Directory creation failure test is platform-dependent and hard to trigger reliably")
-	})
-
-	t.Run("handles write failure", func(t *testing.T) {
-		// This is also hard to test reliably without mocking the parquet writer
-		// The current implementation doesn't have good testability for error conditions
-		t.Skip("Write failure test requires mocking dependencies")
-	})
-}
-
 // TestReadParquet tests reading records from parquet files
 func TestReadParquet(t *testing.T) {
 	t.Run("reads records successfully", func(t *testing.T) {
