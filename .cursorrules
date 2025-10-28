@@ -1,0 +1,158 @@
+# Cursor Rules for Binance Sync Project
+
+## General Coding Rules
+
+### All Languages
+
+- In code, write comments ONLY in English.
+- DO NOT create a class if it is not necessary. Focus on FP. OOP is still ok, but in rare cases.
+- Make minimal changes to files - modify only what's necessary to complete the task:
+    - Focus on the specific task at hand, avoid unrelated improvements
+    - Preserve existing code structure and formatting
+    - Make changes in small, verifiable steps
+    - Choose solutions that require minimal code changes
+    - If needed, write in chat why minimal changes were not possible if larger changes are required and ask for approval
+- Follow core software development principles:
+    - TDD (Test-Driven Development): Write tests first, then implement the functionality
+    - DRY (Don't Repeat Yourself): Avoid code duplication, extract reusable components
+    - KISS (Keep It Simple, Stupid): Choose simple solutions over complex ones
+    - YAGNI (You Aren't Gonna Need It): Don't implement functionality until it's necessary
+- Use strict types.
+- Use clean functions. No hidden changes. No in-place changes.
+- Follow all linter rules.
+- Follow best practices.
+
+## Go Best Practices
+
+### Code Organization
+
+- Follow standard Go project layout (cmd/, pkg/, internal/, etc.)
+- Use `pkg/` for library code that can be imported by external applications
+- Use `internal/` for private application code that should not be imported
+- Keep package names short, concise, and lowercase
+- Use singular nouns for package names (e.g., `model`, not `models`)
+
+### Naming Conventions
+
+- Use camelCase for unexported identifiers, PascalCase for exported ones
+- Variable names should be descriptive but concise
+- Use short variable names in small scopes (e.g., `i` for loop indices)
+- Function names should start with a verb (e.g., `GetUser()`, `ProcessData()`)
+- Interface names should end with "er" (e.g., `Reader`, `Writer`)
+- Channel prefix should be `ch` (e.g., `chData`)
+
+### Error Handling
+
+- Always handle errors, never ignore them with `_`
+- Use `errors.Join()`, `errors.Wrap()` or `fmt.Errorf()` with `%w` for error wrapping
+- Return errors as the last return value
+- Use custom error types when appropriate for different error conditions
+- Check for context cancellation in long-running operations
+- In process intensive operations `errCh` channel for errors(close it when done)
+
+### Concurrency
+
+- Use goroutines for concurrent operations
+- Use channels for communication between goroutines
+- Prefer `sync.WaitGroup` for waiting on multiple goroutines
+- Use `sync.Mutex` or `sync.RWMutex` for shared data protection
+- Avoid global state; pass dependencies explicitly
+- Use `context.Context` for cancellation and request-scoped values
+
+### Channels Best Practices
+
+- Use channels for communication between goroutines, not for synchronization
+- Close channels to signal completion (only sender should close)
+- Use buffered channels when producer/consumer rates differ
+- Use select statements for multiplexing channel operations
+    - Handle channel closure gracefully with comma ok idiom:
+      ```go
+      go func (ch <-chan int, ctx context.Context) {
+      for {
+          select {
+          case value, ok := <-ch:
+              if !ok {
+                  return // channel closed
+              }
+              // process value
+          case <-ctx.Done():
+              return // context cancelled
+          }
+      }
+      (ch, ctx)
+      ```
+- Use `context.WithCancel()` or `context.WithTimeout()` for bounded operations
+- Prefer `chan struct{}` for signals (start/stop/quit) instead of `chan bool`
+
+### Testing (TDD - Test-Driven Development)
+
+- Write tests before implementing functionality (Red-Green-Refactor cycle)
+- Use table-driven tests for multiple test cases
+- Name test functions with descriptive names: `TestFunctionName_Scenario_Result`
+- Use `t.Run()` for subtests to group related test cases
+- Test both happy path and error conditions
+- Use `testify/assert` or `testify/require` for cleaner assertions
+- Mock external dependencies (S3, database) for unit tests
+- Use build tags to separate integration tests: `// +build integration`
+
+### Performance
+
+- Use `sync.Pool` for expensive object reuse
+- Use `strings.Builder` for string concatenation in loops
+- Use `bytes.Buffer` for byte slice operations
+- Prefer slice operations over array operations when possible
+- Use `copy()` instead of loops for slice copying
+- Profile with `go tool pprof` for performance bottlenecks
+
+### Dependencies
+
+- Keep dependencies minimal and well-maintained
+- Use Go modules for dependency management
+- Pin versions in go.mod for reproducible builds
+- Regularly update dependencies with `go get -u`
+- Use `go mod tidy` to clean up unused dependencies
+
+### Code Quality
+
+- Run `go fmt` on all code before committing
+- Use `go vet` to catch common mistakes
+- Use `golangci-lint` for comprehensive linting
+- Write meaningful commit messages following conventional commits
+- Use `goimports` for automatic import organization
+
+### Database (DuckDB specific)
+
+- Use prepared statements for repeated queries
+- Handle database connections properly with defer close
+- Use transactions for multiple related operations
+- Implement proper error handling for database operations
+- Use connection pooling when appropriate
+- Validate SQL queries and handle SQL injection risks
+
+### File Operations
+
+- Always close files with defer
+- Use `ioutil.TempFile()` for temporary files
+- Handle file permissions appropriately
+- Use `filepath.Walk()` for directory traversal
+- Check file existence with `os.Stat()` before operations
+
+### HTTP/S3 Operations
+
+- Use appropriate timeouts for network operations
+- Implement retry logic with exponential backoff
+- Handle rate limiting gracefully
+- Use streaming for large file downloads/uploads
+- Validate input data before processing
+
+## Libraries
+
+- Don't hesitate to read library's source code instead of googling
+- If you need to use a library, check if it has a TypeScript definition file. If not, consider using
+  `@types/library-name` or creating your own type definitions.
+
+## Repository Best Practices
+
+- Always start by reading `README.md` in the root - it's your primary source for project context, structure, and setup
+- Pay special attention to README if `.cursorrules` is not present
+- Summarize key points about the project before starting any work

@@ -1,17 +1,15 @@
 # Finance Data Proxy
 
+
+This is a Go-based finance data proxy for crypto/fiat data, using DuckDB for caching and Parquet files with Hive
+partitioning. The project syncs Binance historical market data from S3.
+
 ## Goals
 
 - External data proxy for finance data (crypto/fiat)
-- Caching data by request into parquet files using Hive Partitioning and duckdb
+- Caching data by request into parquet files using Hive Partitioning and duckdb/posgresql
 
-## Binance Data Proxy (prototype)
-
-Binance exposes historical market data via a public S3 bucket (data.binance.vision) as zipped CSV files. Working directly with zipped CSVs is inconvenient for analytics and ad‑hoc queries.
-
-This repository explores a proxy approach: discover, download, decompress, and prepare Binance data for local querying with DuckDB. The current code focuses on listing and fetching files, unzipping in memory, and sketching ingestion into DuckDB.
-
-## Goals
+## Features
 
 - API to request historical data by SQL queries
 - Lazy loading of data by user queries and caching
@@ -19,7 +17,17 @@ This repository explores a proxy approach: discover, download, decompress, and p
 - Clean database schema structure
 - ZSTD compression for Parquet files
 
-Note: These are target goals; not all are implemented yet. See TODOs below.
+
+### Binance Data Proxy (prototype)
+
+Binance exposes historical market data via a public S3 bucket (data.binance.vision) as zipped CSV files. Working directly with zipped CSVs is inconvenient for analytics and ad‑hoc queries.
+
+This repository explores a proxy approach: discover, download, decompress, and prepare Binance data for local querying with DuckDB. The current code focuses on listing and fetching files, unzipping in memory, and sketching ingestion into DuckDB.
+
+
+
+
+> Note: These are target goals; not all are implemented yet. See TODOs below.
 
 ## Current status (what works now)
 
@@ -45,82 +53,93 @@ Note: These are target goals; not all are implemented yet. See TODOs below.
 ## Project structure
 
 - main.go — entry point; S3 listing, downloading, in‑memory unzip, and DuckDB scaffolding
-- normalization_test.go — tests for path normalization (Link)
 - go.mod / go.sum — Go modules
 - data/ — local working data directory (created/populated by you)
-- binance.duckdb, data.duckdb — DuckDB database files (created by the app)
 
 ## Requirements
 
-- Go 1.24+ installed (matching or newer than the version in go.mod)
-- Network access to AWS S3 (public bucket data.binance.vision)
-- No AWS credentials are required for public access; the client is configured for anonymous S3 reads
+- Go 1.24+
+- Network access to AWS S3 (data.binance.vision)
 
-## Setup
+## Installation
 
-1. Ensure Go is installed and on PATH. Verify:
-   - go version
-2. Download dependencies:
-   - go mod download
+```bash
+go mod download
+```
 
-## Build and run
+## Usage
 
-- Run directly:
-  - go run ./
+Run directly:
+```bash
+go run ./
+```
 
-- Build a binary:
-  - go build -o binance-sync
-  - ./binance-sync
+Build binary:
+```bash
+go build -o binance-sync
+./binance-sync
+```
 
-What the program currently does:
-- Creates/opens data.duckdb
-- Lists monthly spot klines under the prefix data/spot/monthly/klines/
-- For each object (skipping directories and CHECKSUM files):
-  - Downloads the ZIP into memory
-  - Decompresses the first file from the ZIP to CSV text
-  - Prepares to load CSV into DuckDB (ingestion SQL is a work in progress)
+## Current Features
 
-Notes:
-- The DuckDB ingestion step in main.go is not finalized; it shows an example using read_csv_auto and needs adjustments to pass CSV content correctly to DuckDB in this context.
+- S3 client for Binance public bucket (anonymous access)
+- List and download monthly spot klines
+- In-memory ZIP decompression to CSV
+- DuckDB database initialization and scaffolding
 
-## Scripts and useful commands
+## Architecture
 
-- Dependency management: go mod tidy
-- Lint/format: go fmt ./...
-- Tests: go test ./...
-- Run with race detector (if applicable): go test -race ./...
+- **Language**: Go 1.24+ with modules
+- **Libraries**:
+  - AWS SDK v2 (S3 operations)
+  - DuckDB Go driver
+- **Storage**:
+  - Local: data.duckdb
+  - Remote: s3://data.binance.vision/
 
-## Environment variables
+## Project Structure
 
-- None required for basic read‑only access to data.binance.vision via S3.
-- The S3 region/endpoint is hardcoded to ap-northeast-1 for the Binance bucket.
-- If you need to customize networking (proxy, etc.), use standard AWS SDK environment variables; however, credentials are not required for this public bucket.
+```
+├── main.go                    # Entry point
+├── main_test.go              # Integration tests
+├── pkg/
+│   ├── binance/              # Binance-specific logic
+│   │   ├── model.go          # Data models
+│   │   ├── service.go        # S3 operations
+│   │   └── normalization_test.go
+│   ├── data/                 # Data processing
+│   │   ├── reader.go         # CSV reader
+│   │   ├── buffer.go         # Data buffering
+│   │   └── decompressor.go   # ZIP handling
+│   └── fs/                   # File system operations
+│       ├── parquet.go        # Parquet processing
+│       ├── parquet_test.go   # Parquet tests
+│       ├── file.go           # File utilities
+│       └── zip.go            # ZIP utilities
+├── go.mod/go.sum             # Dependencies
+└── data/                     # Working directory
+```
 
-## Tests
+## Development
 
-- Unit tests:
-  - normalization_test.go verifies S3 path normalization (Link)
-- Run all tests:
-  - go test ./...
+### Commands
+```bash
+go mod tidy      # Clean dependencies
+go fmt ./...     # Format code
+go test ./...    # Run tests
+go test -race ./...  # Run tests with race detection
+```
 
-## Data and storage
+### Testing
+- Unit tests: `go test ./...`
+- Integration tests: `go test -tags=integration ./...`
 
-- Local database file: data.duckdb (created automatically)
-- Public data source: s3://data.binance.vision/
-- Sample path for one symbol/interval/month (built by Link):
-  - data/spot/monthly/klines/BTCUSDT/1m/BTCUSDT-1m-2021-01.zip
+## Roadmap
 
-## TODOs / Roadmap
-
-- Implement a proper ingestion path from CSV text to DuckDB tables
-  - Define schemas and create tables
-  - Parse CSV columns and types; convert to Parquet with partitioning if desired
-- Add a persistent cache layer and eviction policy
-- Expose an HTTP API for SQL queries over DuckDB
-- Add configuration (flags/env) for market, symbol list, intervals, and date ranges
-- Expand tests to cover S3 listing, downloading, and ingestion
-- Provide reproducible examples and datasets
-
-## License
-
-- TODO: Add a LICENSE file and specify the project license.
+- [ ] Implement CSV to DuckDB ingestion pipeline
+- [ ] Add Parquet conversion with Hive partitioning
+- [ ] Implement persistent caching layer
+- [ ] Add HTTP API for SQL queries
+- [ ] Configuration system (flags/env vars)
+- [ ] Extended test coverage
+- [ ] Documentation and examples
