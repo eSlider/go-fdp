@@ -229,8 +229,13 @@ func NewHistoryAssetByPath(path string) (a *HistoryAsset, err error) {
 
 // IsZipLink - is a link to a concrete asset zip file
 func (q HistoryAsset) IsZipLink() bool {
-	if q.Date.IsZero() || q.Frame == "" || q.Market == "" {
+	// Market and Date are always required
+	if q.Date.IsZero() || q.Market == "" {
 		return false
+	}
+	// Frame is required only for klines
+	if q.Indicator == Klines {
+		return q.Frame != ""
 	}
 	return true
 }

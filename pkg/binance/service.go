@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"os"
 	"strings"
 	"sync-v3/pkg/data"
 	"sync-v3/pkg/fs"
@@ -52,6 +53,9 @@ type HistoryConsumer struct {
 	downloader *manager.Downloader // S3 Downloader
 	bucket     string
 	localDir   string // Local directory for downloaded files
+
+	// Options
+	RecreateParquet bool // Recreate parquet files if they already exist
 }
 
 type ListResult struct {
@@ -127,6 +131,10 @@ func (s *HistoryConsumer) DownloadAndTransform(
 		link := asset.SymbolDateAssetZipLink()
 		parquetPath := strings.TrimSuffix(link, ".zip") + ".parquet"
 
+		if s.RecreateParquet {
+			os.Remove(parquetPath)
+		}
+
 		// Check if a file already exists, then skip downloading, transforming and loading
 		if fs.FileExists(parquetPath) {
 			infoCh <- &AssetETLInfo{
@@ -162,7 +170,7 @@ func (s *HistoryConsumer) DownloadAndTransform(
 
 				// Store CSV as structured data into duckdb hive partitioned table as parquet files
 				if asset.Indicator == Klines {
-					csvKlineCh, csvErrCh := data.ReadCSVChan[Kline](csvBuffer)
+					csvKlineCh, csvErrCh := data.ReadHeaderlessCSVChan[Kline](csvBuffer)
 					parquetKlineCh, prqErrCh := fs.WriteParquet[ParquetKline](parquetPath)
 					wroteKlines := 0
 				ETLLoop:
@@ -171,7 +179,7 @@ func (s *HistoryConsumer) DownloadAndTransform(
 						select {
 						case csvKline, ok := <-csvKlineCh:
 							if !ok {
-								//close(parquetKlineCh)
+								close(parquetKlineCh)
 								break ETLLoop
 							}
 							parquetKlineCh <- NewParquetKline(csvKline)
@@ -202,10 +210,69 @@ func (s *HistoryConsumer) DownloadAndTransform(
 						}
 					}
 
+					// Ensure parquet writer finishes and closes file before reporting done
+					for err := range prqErrCh {
+						if err != nil {
+							infoCh <- &AssetETLInfo{
+								Path:   parquetPath,
+								Status: StatusError,
+								Err:    fmt.Errorf("error writing parquet: %v", err),
+							}
+						}
+					}
+
 					infoCh <- &AssetETLInfo{
 						Path:   parquetPath,
 						Status: StatusParquetDone,
 						Info:   fmt.Sprintf("Wrote %d parquetKlines to parquet", wroteKlines),
+					}
+				} else if asset.Indicator == AggTrades {
+					csvAggCh, csvErrCh := data.ReadHeaderlessCSVChan[AggTrade](csvBuffer)
+					parquetAggCh, prqErrCh := fs.WriteParquet[ParquetAggTrade](parquetPath)
+					wroteTrades := 0
+				ETLLoopAgg:
+					for {
+						select {
+						case csvAgg, ok := <-csvAggCh:
+							if !ok {
+								close(parquetAggCh)
+								break ETLLoopAgg
+							}
+							parquetAggCh <- NewParquetAggTrade(csvAgg)
+							wroteTrades++
+						case err, ok := <-csvErrCh:
+							if !ok {
+								break ETLLoopAgg
+							}
+							infoCh <- &AssetETLInfo{
+								Path:   parquetPath,
+								Status: StatusError,
+								Err:    fmt.Errorf("error reading csv: %v", err),
+							}
+						case err, ok := <-prqErrCh:
+							if !ok {
+								continue
+							}
+							infoCh <- &AssetETLInfo{
+								Path:   parquetPath,
+								Status: StatusError,
+								Err:    fmt.Errorf("error writing parquet: %v", err),
+							}
+						}
+					}
+					for err := range prqErrCh {
+						if err != nil {
+							infoCh <- &AssetETLInfo{
+								Path:   parquetPath,
+								Status: StatusError,
+								Err:    fmt.Errorf("error writing parquet: %v", err),
+							}
+						}
+					}
+					infoCh <- &AssetETLInfo{
+						Path:   parquetPath,
+						Status: StatusParquetDone,
+						Info:   fmt.Sprintf("Wrote %d parquetAggTrades to parquet", wroteTrades),
 					}
 				}
 			}
@@ -239,7 +306,7 @@ func (s *HistoryConsumer) CacheZip(path string) (info chan *AssetETLInfo) {
 		// Do we cache the file?
 		if fs.FileExists(path) {
 			// Read zip
-			buf, err := fs.ReadZip(path)
+			buf, err := data.ReadIntoBuffer(path)
 			info <- &AssetETLInfo{
 				Path:   path,
 				Status: StatusReadingZip,
@@ -352,7 +419,10 @@ func NewHistoryConsumer(ctx context.Context) (*HistoryConsumer, error) {
 	client := s3.NewFromConfig(*cfg)
 	downloader := manager.NewDownloader(client)
 	return &HistoryConsumer{
-		bucket:     "data.binance.vision",
+
+		RecreateParquet: true,
+
+VF		bucket:     "data.binance.vision",
 		client:     client,
 		downloader: downloader,
 		cfg:        cfg,

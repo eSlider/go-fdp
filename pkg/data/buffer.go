@@ -110,3 +110,23 @@ func (b *Buffer) Persist(path string) (err error) {
 	}
 	return
 }
+
+// ReadIntoBuffer reads the content of a file into a Buffer
+func ReadIntoBuffer(path string) (buf *Buffer, err error) {
+	// ReadCSV existing file
+	var fc []byte
+
+	// GetAsset reader for the file
+	fc, err = os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read existing file: %v", err)
+	}
+
+	// Write content to Buffer
+	buf = new(Buffer)
+	if _, err = buf.Write(fc); err != nil {
+		return nil, fmt.Errorf("failed to write to buffer: %v", err)
+	}
+
+	return
+}
