@@ -419,13 +419,11 @@ func NewHistoryConsumer(ctx context.Context) (*HistoryConsumer, error) {
 	client := s3.NewFromConfig(*cfg)
 	downloader := manager.NewDownloader(client)
 	return &HistoryConsumer{
-
 		RecreateParquet: true,
-
-VF		bucket:     "data.binance.vision",
-		client:     client,
-		downloader: downloader,
-		cfg:        cfg,
-		ctx:        ctx,
+		bucket:          "data.binance.vision",
+		client:          client,
+		downloader:      downloader,
+		cfg:             cfg,
+		ctx:             ctx,
 	}, nil
 }
