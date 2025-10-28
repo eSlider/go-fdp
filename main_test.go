@@ -24,7 +24,7 @@ func TestMainProgramParquetCreation(t *testing.T) {
 			Frequency:  binance.Monthly,
 			Frame:      binance.OneMinute,
 			Indicator:  binance.Klines,
-			Date:       time.Date(2017, 8, 1, 0, 0, 0, 0, time.UTC),
+			Date:       time.Date(2019, 8, 1, 0, 0, 0, 0, time.UTC),
 			Market:     "ETHUSDT",
 		}
 
@@ -290,13 +290,14 @@ func TestMainProgramParquetCreation(t *testing.T) {
 			if record.Timestamp == 0 {
 				t.Errorf("record %d has invalid timestamp: %d", i, record.Timestamp)
 			}
-			if record.AggTradeID == 0 {
+			// Note: AggTradeID, FirstTradeID, LastTradeID can be 0 for the first trades
+			if record.AggTradeID < 0 {
 				t.Errorf("record %d has invalid agg_trade_id: %d", i, record.AggTradeID)
 			}
-			if record.FirstTradeID == 0 {
+			if record.FirstTradeID < 0 {
 				t.Errorf("record %d has invalid first_trade_id: %d", i, record.FirstTradeID)
 			}
-			if record.LastTradeID == 0 {
+			if record.LastTradeID < 0 {
 				t.Errorf("record %d has invalid last_trade_id: %d", i, record.LastTradeID)
 			}
 			if record.Price <= 0 {

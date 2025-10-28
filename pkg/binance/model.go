@@ -253,7 +253,7 @@ type Kline struct {
 	NumberOfTrades int64   `csv:"8"`
 	TakerBuyVolume float64 `csv:"9"`
 	TakerBuyQuote  float64 `csv:"10"`
-	Ignore         int64   `csv:"11"`
+	Ignore         float64 `csv:"11"`
 }
 
 type ParquetKline struct {

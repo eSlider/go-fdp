@@ -190,23 +190,27 @@ func (s *HistoryConsumer) DownloadAndTransform(
 							//}
 						case err, ok := <-csvErrCh:
 							if !ok {
-								//close(parquetKlineCh)
+								close(parquetKlineCh)
 								break ETLLoop
 							}
+							close(parquetKlineCh) // Close parquet channel on CSV error
 							infoCh <- &AssetETLInfo{
 								Path:   parquetPath,
 								Status: StatusError,
 								Err:    fmt.Errorf("error reading csv: %v", err),
 							}
+							break ETLLoop
 						case err, ok := <-prqErrCh:
 							if !ok {
 								continue
 							}
+							close(parquetKlineCh) // Close parquet channel on parquet error
 							infoCh <- &AssetETLInfo{
 								Path:   parquetPath,
 								Status: StatusError,
 								Err:    fmt.Errorf("error writing parquet: %v", err),
 							}
+							break ETLLoop
 						}
 					}
 
@@ -242,22 +246,27 @@ func (s *HistoryConsumer) DownloadAndTransform(
 							wroteTrades++
 						case err, ok := <-csvErrCh:
 							if !ok {
+								close(parquetAggCh)
 								break ETLLoopAgg
 							}
+							close(parquetAggCh) // Close parquet channel on CSV error
 							infoCh <- &AssetETLInfo{
 								Path:   parquetPath,
 								Status: StatusError,
 								Err:    fmt.Errorf("error reading csv: %v", err),
 							}
+							break ETLLoopAgg
 						case err, ok := <-prqErrCh:
 							if !ok {
 								continue
 							}
+							close(parquetAggCh) // Close parquet channel on parquet error
 							infoCh <- &AssetETLInfo{
 								Path:   parquetPath,
 								Status: StatusError,
 								Err:    fmt.Errorf("error writing parquet: %v", err),
 							}
+							break ETLLoopAgg
 						}
 					}
 					for err := range prqErrCh {
