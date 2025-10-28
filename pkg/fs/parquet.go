@@ -8,6 +8,7 @@ import (
 
 	"github.com/xitongsys/parquet-go-source/local"
 	"github.com/xitongsys/parquet-go/parquet"
+	"github.com/xitongsys/parquet-go/reader"
 	"github.com/xitongsys/parquet-go/writer"
 )
 
@@ -27,11 +28,8 @@ func WriteParquet[T any](
 	errCh = make(chan error)
 	go func() {
 		defer close(errCh)
-		//os.Remove(path)
-		if FileExists(path) {
-			errCh <- errors.Join(ErrFileExists, fmt.Errorf("parquet file %s already exists, skipping", path))
-			return
-		}
+		// Remove existing file to overwrite
+		os.Remove(path)
 
 		// Create a directory if not exists
 		parquetDir := filepath.Dir(path)
@@ -63,8 +61,67 @@ func WriteParquet[T any](
 		for entry := range rCh {
 			if err = pw.Write(entry); err != nil {
 				errCh <- errors.Join(ErrWriteFile, fmt.Errorf("failed to write parquet file: %v", err))
+				return
 			}
 		}
 	}()
+	return
+}
+
+// ReadParquet reads records from a parquet file
+func ReadParquet[T any](
+	path string,
+) (
+	rCh chan *T, // channel to send records read from parquet file
+	errCh chan error,
+) {
+	rCh = make(chan *T)
+	errCh = make(chan error)
+
+	go func() {
+		defer close(rCh)
+		defer close(errCh)
+
+		// Check if file exists
+		if !FileExists(path) {
+			errCh <- fmt.Errorf("parquet file does not exist: %s", path)
+			return
+		}
+
+		// Open the parquet file
+		fr, err := local.NewLocalFileReader(path)
+		if err != nil {
+			errCh <- fmt.Errorf("can't open local file: %v", err)
+			return
+		}
+		defer fr.Close()
+
+		// Create parquet reader
+		pr, err := reader.NewParquetReader(fr, new(T), 4)
+		if err != nil {
+			errCh <- fmt.Errorf("can't create parquet reader: %v", err)
+			return
+		}
+		defer pr.ReadStop()
+
+		// Read all records at once
+		numRows := int(pr.GetNumRows())
+		records, err := pr.ReadByNumber(numRows)
+		if err != nil {
+			errCh <- fmt.Errorf("failed to read parquet records: %v", err)
+			return
+		}
+
+		// Send records to channel (cast to correct type)
+		for _, record := range records {
+			if typedRecord, ok := record.(T); ok {
+				rCh <- &typedRecord
+			} else {
+				errCh <- fmt.Errorf("type assertion failed for record: %T", record)
+				return
+			}
+		}
+	}()
+
 	return
 }

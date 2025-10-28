@@ -171,7 +171,7 @@ func (s *HistoryConsumer) DownloadAndTransform(
 						select {
 						case csvKline, ok := <-csvKlineCh:
 							if !ok {
-								close(parquetKlineCh)
+								//close(parquetKlineCh)
 								break ETLLoop
 							}
 							parquetKlineCh <- NewParquetKline(csvKline)
@@ -182,7 +182,7 @@ func (s *HistoryConsumer) DownloadAndTransform(
 							//}
 						case err, ok := <-csvErrCh:
 							if !ok {
-								close(parquetKlineCh)
+								//close(parquetKlineCh)
 								break ETLLoop
 							}
 							infoCh <- &AssetETLInfo{
@@ -206,26 +206,6 @@ func (s *HistoryConsumer) DownloadAndTransform(
 						Path:   parquetPath,
 						Status: StatusParquetDone,
 						Info:   fmt.Sprintf("Wrote %d parquetKlines to parquet", wroteKlines),
-					}
-				} else if asset.Indicator == AggTrades {
-					var aggTrades []*ParquetAggTrade
-					parquetPath := strings.TrimSuffix(link, ".zip") + ".parquet"
-					prqAggTradeCh, prqErrCh := fs.WriteParquet[ParquetAggTrade](parquetPath)
-					defer func() {
-						// Ensure we drain errors if any are produced while we were writing
-						for err := range prqErrCh {
-							fmt.Printf("Error writing parquet: %v\n", err)
-						}
-					}()
-					err = data.ReadCSV[AggTrade](csvBuffer, func(a *AggTrade) error {
-						prqAggTrade := NewParquetAggTrade(a)
-						prqAggTradeCh <- prqAggTrade
-						aggTrades = append(aggTrades, prqAggTrade)
-						return nil
-					})
-					close(prqAggTradeCh)
-					if err != nil {
-						fmt.Printf("Error reading CSV: %v\n", err)
 					}
 				}
 			}
