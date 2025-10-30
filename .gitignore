@@ -9,3 +9,5 @@
 *.db
 *.wal
 *.parquet
+
+/sync-v3
