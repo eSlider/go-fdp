@@ -182,13 +182,18 @@ func (s *HistoryConsumer) DownloadAndTransform(
 						case csvEntry, ok := <-csvReadCh:
 							if !ok {
 								close(parquetWriteCh)
+								return
 							}
+
+							if csvEntry == nil {
+								panic("nil csv entry")
+							}
+
 							parquet, err2 := csvEntry.Parquet()
 							if err2 != nil {
 								errCh <- fmt.Errorf("error converting csv entry to parquet: %v", err2)
 								return
 							}
-
 							parquetWriteCh <- parquet
 							wroteKlines++
 						case err, ok := <-csvErrCh:

@@ -28,7 +28,12 @@ func WriteParquet[T any](
 	rCh = make(chan *T)
 	errCh = make(chan error)
 	go func() {
-		defer close(errCh)
+		defer func() {
+			// Check if errCh is closed, otherwise close it
+			if _, ok := <-errCh; ok {
+				close(errCh)
+			}
+		}()
 		// Remove existing file to overwrite
 		os.Remove(path)
 
@@ -74,6 +79,7 @@ func WriteParquet[T any](
 			return
 		}
 
+		close(errCh)
 		fmt.Println("Finished writing parquet file")
 	}()
 	return

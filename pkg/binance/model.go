@@ -243,7 +243,7 @@ func (q HistoryAsset) IsZipLink() bool {
 
 // Transformer - interface for transforming data to several formats
 type Transformer interface {
-	Parquet() (*struct{}, error) // Parquet - transforms the data to parquet format
+	Parquet() (any, error) // Parquet - transforms the data to parquet format
 }
 
 // Kline - binance kline data

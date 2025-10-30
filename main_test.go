@@ -35,7 +35,6 @@ func TestMainProgramParquetCreation(t *testing.T) {
 		// Collect results
 		var infos []*binance.AssetETLInfo
 		var errs []error
-		done := make(chan bool)
 
 		go func() {
 			for {
@@ -45,18 +44,15 @@ func TestMainProgramParquetCreation(t *testing.T) {
 						return
 					}
 					infos = append(infos, info)
-				case err, ok := <-errCh:
-					if !ok {
-						close(done)
-						return
-					}
-					errs = append(errs, err)
 				}
 			}
 		}()
 
+		for err := range errCh {
+			errs = append(errs, err)
+		}
+
 		// Wait for completion
-		<-done
 
 		// Check for errors
 		if len(errs) > 0 {
