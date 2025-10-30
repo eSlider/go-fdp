@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sync-v3/pkg/binance"
+	"sync-v3/pkg/data"
 	"sync-v3/pkg/fs"
 	"testing"
 	"time"
@@ -37,7 +38,6 @@ func TestMainProgramParquetCreation(t *testing.T) {
 		done := make(chan bool)
 
 		go func() {
-			defer close(done)
 			for {
 				select {
 				case info, ok := <-infoCh:
@@ -47,6 +47,7 @@ func TestMainProgramParquetCreation(t *testing.T) {
 					infos = append(infos, info)
 				case err, ok := <-errCh:
 					if !ok {
+						close(done)
 						return
 					}
 					errs = append(errs, err)
@@ -62,7 +63,7 @@ func TestMainProgramParquetCreation(t *testing.T) {
 			// If file already exists, that's ok for this test
 			hasNonFileExistsError := false
 			for _, err := range errs {
-				if !errors.Is(err, fs.ErrFileExists) {
+				if !errors.Is(err, data.ErrFileExists) {
 					hasNonFileExistsError = true
 					break
 				}
@@ -91,7 +92,7 @@ func TestMainProgramParquetCreation(t *testing.T) {
 		}
 
 		// Read the parquet file and count entries
-		recordCh, readErrCh := fs.ReadParquet[binance.ParquetKline](parquetPath)
+		recordCh, readErrCh := data.ReadParquet[binance.ParquetKline](parquetPath)
 
 		var records []*binance.ParquetKline
 		readDone := make(chan bool)
@@ -215,7 +216,7 @@ func TestMainProgramParquetCreation(t *testing.T) {
 		if len(errs) > 0 {
 			hasNonFileExistsError := false
 			for _, err := range errs {
-				if !errors.Is(err, fs.ErrFileExists) {
+				if !errors.Is(err, data.ErrFileExists) {
 					hasNonFileExistsError = true
 					break
 				}
@@ -244,7 +245,7 @@ func TestMainProgramParquetCreation(t *testing.T) {
 		}
 
 		// Read the parquet file and count entries
-		recordCh, readErrCh := fs.ReadParquet[binance.ParquetAggTrade](parquetPath)
+		recordCh, readErrCh := data.ReadParquet[binance.ParquetAggTrade](parquetPath)
 
 		var records []*binance.ParquetAggTrade
 		readDone := make(chan bool)

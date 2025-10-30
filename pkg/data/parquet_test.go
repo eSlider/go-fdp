@@ -1,10 +1,11 @@
-package fs
+package data
 
 import (
 	"fmt"
 	"math/rand"
 	"os"
 	"path/filepath"
+	"sync-v3/pkg/fs"
 	"testing"
 	"time"
 )
@@ -53,17 +54,22 @@ func TestWriteParquet(t *testing.T) {
 			errs = append(errs, err)
 		}
 
+		// Check if file exists
+		if !fs.FileExists(filePath) {
+			t.Fatal("parquet file was not created")
+		}
+
 		// Check for errors
 		if len(errs) > 0 {
 			t.Fatalf("unexpected errors: %v", errs)
 		}
 
 		// Verify file was created
-		if !FileExists(filePath) {
+		if !fs.FileExists(filePath) {
 			t.Fatal("parquet file was not created")
 		}
 
-		// Verify file has content (FileExists checks size > 4 bytes)
+		// Verify file has content (fs.FileExists checks size > 4 bytes)
 		info, err := os.Stat(filePath)
 		if err != nil {
 			t.Fatalf("failed to stat file: %v", err)
@@ -108,7 +114,7 @@ func TestWriteParquet(t *testing.T) {
 		}
 
 		// Verify file exists
-		if !FileExists(filePath) {
+		if !fs.FileExists(filePath) {
 			t.Fatal("parquet file was not created")
 		}
 	})
@@ -133,7 +139,7 @@ func TestWriteParquet(t *testing.T) {
 		}
 
 		// File should still be created (empty parquet file)
-		if !FileExists(filePath) {
+		if !fs.FileExists(filePath) {
 			t.Fatal("parquet file was not created even for empty record set")
 		}
 	})
@@ -164,7 +170,7 @@ func TestWriteParquet(t *testing.T) {
 			t.Fatalf("unexpected errors: %v", errs)
 		}
 
-		if !FileExists(filePath) {
+		if !fs.FileExists(filePath) {
 			t.Fatal("parquet file was not created")
 		}
 	})
@@ -173,7 +179,8 @@ func TestWriteParquet(t *testing.T) {
 // GetTestDir returns a temporary directory for testing
 func GetTestDir() string {
 	// Random
-	tmpDir := ModuleRootPath() + "/var/test/" + "test_" + fmt.Sprintf("%010d", time.Now().UnixNano()) + "_" + fmt.Sprintf("%010d", rand.Int63())
+	tmpDir := fs.ModuleRootPath() + "/var/test/" + "test_" + fmt.Sprintf("%010d",
+		time.Now().UnixNano()) + "_" + fmt.Sprintf("%010d", rand.Int63())
 	os.RemoveAll(tmpDir)
 	os.MkdirAll(tmpDir, 0755)
 	return tmpDir

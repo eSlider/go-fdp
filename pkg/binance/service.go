@@ -171,7 +171,7 @@ func (s *HistoryConsumer) DownloadAndTransform(
 				// Store CSV as structured data into duckdb hive partitioned table as parquet files
 				if asset.Indicator == Klines {
 					csvKlineCh, csvErrCh := data.ReadHeaderlessCSVChan[Kline](csvBuffer)
-					parquetKlineCh, prqErrCh := fs.WriteParquet[ParquetKline](parquetPath)
+					parquetKlineCh, prqErrCh := data.WriteParquet[ParquetKline](parquetPath)
 					wroteKlines := 0
 				ETLLoop:
 					// Fan-in and lifecycle management
@@ -232,7 +232,7 @@ func (s *HistoryConsumer) DownloadAndTransform(
 					}
 				} else if asset.Indicator == AggTrades {
 					csvAggCh, csvErrCh := data.ReadHeaderlessCSVChan[AggTrade](csvBuffer)
-					parquetAggCh, prqErrCh := fs.WriteParquet[ParquetAggTrade](parquetPath)
+					parquetAggCh, prqErrCh := data.WriteParquet[ParquetAggTrade](parquetPath)
 					wroteTrades := 0
 				ETLLoopAgg:
 					for {

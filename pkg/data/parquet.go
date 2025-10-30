@@ -1,10 +1,11 @@
-package fs
+package data
 
 import (
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync-v3/pkg/fs"
 
 	"github.com/xitongsys/parquet-go-source/local"
 	"github.com/xitongsys/parquet-go/parquet"
@@ -43,14 +44,12 @@ func WriteParquet[T any](
 			errCh <- errors.Join(ErrWriteFile, fmt.Errorf("can't create local file: %v", err))
 			return
 		}
-		defer fw.Close()
 
 		pw, err := writer.NewParquetWriter(fw, new(T), 2)
 		if err != nil {
 			errCh <- errors.Join(ErrWriteFile, fmt.Errorf("can't create parquet writer: %v", err))
 			return
 		}
-		defer pw.WriteStop()
 
 		// len(csvData.Bytes())/6
 		// pw.RowGroupSize = 1 * 1024 * 1024                  // 1
@@ -63,6 +62,16 @@ func WriteParquet[T any](
 				errCh <- errors.Join(ErrWriteFile, fmt.Errorf("failed to write parquet file: %v", err))
 				return
 			}
+		}
+
+		if err = pw.WriteStop(); err != nil {
+			errCh <- errors.Join(ErrWriteFile, fmt.Errorf("failed to write parquet file: %v", err))
+			return
+		}
+
+		if err = fw.Close(); err != nil {
+			errCh <- errors.Join(ErrWriteFile, fmt.Errorf("failed to close parquet file: %v", err))
+			return
 		}
 
 		fmt.Println("Finished writing parquet file")
@@ -85,7 +94,7 @@ func ReadParquet[T any](
 		defer close(errCh)
 
 		// Check if file exists
-		if !FileExists(path) {
+		if !fs.FileExists(path) {
 			errCh <- fmt.Errorf("parquet file does not exist: %s", path)
 			return
 		}
