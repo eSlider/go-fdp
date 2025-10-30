@@ -25,7 +25,7 @@ func TestMainProgramParquetCreation(t *testing.T) {
 			Frequency:  binance.Monthly,
 			Frame:      binance.OneMinute,
 			Indicator:  binance.Klines,
-			Date:       time.Date(2019, 8, 1, 0, 0, 0, 0, time.UTC),
+			Date:       time.Date(2020, 8, 1, 0, 0, 0, 0, time.UTC),
 			Market:     "ETHUSDT",
 		}
 

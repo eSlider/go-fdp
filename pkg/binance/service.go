@@ -173,57 +173,54 @@ func (s *HistoryConsumer) DownloadAndTransform(
 					csvKlineCh, csvErrCh := data.ReadHeaderlessCSVChan[Kline](csvBuffer)
 					parquetKlineCh, prqErrCh := data.WriteParquet[ParquetKline](parquetPath)
 					wroteKlines := 0
-				ETLLoop:
-					// Fan-in and lifecycle management
-					for {
-						select {
-						case csvKline, ok := <-csvKlineCh:
-							if !ok {
-								close(parquetKlineCh)
-								break ETLLoop
+
+					// Read CSV and write to parquet
+					go func() {
+						for {
+							select {
+							case csvKline, ok := <-csvKlineCh:
+								if !ok {
+									close(parquetKlineCh)
+								}
+								parquetKlineCh <- NewParquetKline(csvKline)
+								wroteKlines++
+							case err, ok := <-csvErrCh:
+								if ok {
+									close(parquetKlineCh)
+									return
+								}
+								close(parquetKlineCh) // Close parquet channel on CSV error
+								infoCh <- &AssetETLInfo{
+									Path:   parquetPath,
+									Status: StatusError,
+									Err:    fmt.Errorf("error reading csv: %v", err),
+								}
+								return
+								// case err, ok := <-prqErrCh:
+								// 	if !ok {
+								// 		continue
+								// 	}
+								// 	close(parquetKlineCh) // Close parquet channel on parquet error
+								// 	infoCh <- &AssetETLInfo{
+								// 		Path:   parquetPath,
+								// 		Status: StatusError,
+								// 		Err:    fmt.Errorf("error writing parquet: %v", err),
+								// 	}
+								// 	return
 							}
-							parquetKlineCh <- NewParquetKline(csvKline)
-							wroteKlines++
-							// infoCh <- &AssetETLInfo{
-							//	Path:   parquetPath,
-							//	Status: StatusTransforming,
-							// }
-						case err, ok := <-csvErrCh:
-							if !ok {
-								close(parquetKlineCh)
-								break ETLLoop
-							}
-							close(parquetKlineCh) // Close parquet channel on CSV error
-							infoCh <- &AssetETLInfo{
-								Path:   parquetPath,
-								Status: StatusError,
-								Err:    fmt.Errorf("error reading csv: %v", err),
-							}
-							break ETLLoop
-						case err, ok := <-prqErrCh:
-							if !ok {
-								continue
-							}
-							close(parquetKlineCh) // Close parquet channel on parquet error
+						}
+					}()
+
+					// Ensure parquet writer finishes and closes file before reporting done
+					for err := range prqErrCh {
+						if err != nil {
 							infoCh <- &AssetETLInfo{
 								Path:   parquetPath,
 								Status: StatusError,
 								Err:    fmt.Errorf("error writing parquet: %v", err),
 							}
-							break ETLLoop
 						}
 					}
-
-					// Ensure parquet writer finishes and closes file before reporting done
-					// for err := range prqErrCh {
-					// 	if err != nil {
-					// 		infoCh <- &AssetETLInfo{
-					// 			Path:   parquetPath,
-					// 			Status: StatusError,
-					// 			Err:    fmt.Errorf("error writing parquet: %v", err),
-					// 		}
-					// 	}
-					// }
 
 					infoCh <- &AssetETLInfo{
 						Path:   parquetPath,
