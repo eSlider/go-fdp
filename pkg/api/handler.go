@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"sync-v3/pkg/binance"
 	"sync-v3/pkg/data"
 	"time"
@@ -104,6 +105,7 @@ type DataQuery struct {
 	Exchange   string `validate:"omitempty"`
 	MarketType string `validate:"omitempty,oneof=spot futures options"`
 	Frame      string `validate:"omitempty,oneof=1m 3m 5m 15m 30m 1h 2h 4h 6h 8h 12h 1d 3d 1w 1M"`
+	Indicator  string `validate:"omitempty,oneof=klines aggTrades"`
 }
 
 // UnmarshalJSON implements the json.Unmarshaler interface
@@ -137,20 +139,20 @@ type ErrorsResponse struct {
 
 // handleData handles the /v1/data endpoint for candle data
 func (s *Server) handleData(w http.ResponseWriter, r *http.Request) {
-
-	dq := &DataQuery{
+	q := &DataQuery{
 		Exchange:   "binance",
 		MarketType: "spot",
 		Frame:      "1m",
+		Indicator:  "klines",
 	}
 
-	if err := s.Validate(dq, w, r); err != nil {
+	if err := s.Validate(q, w, r); err != nil {
 		log.Fatalf("Validation error: %v", err)
 		return
 	}
 
 	// Basic presence checks for required numeric fields
-	if dq.Market == "" {
+	if q.Market == "" {
 		http.Error(w, "Missing required parameters: from, to, market", http.StatusBadRequest)
 		return
 	}
@@ -166,12 +168,12 @@ func (s *Server) handleData(w http.ResponseWriter, r *http.Request) {
 	// Loop from start to end by every year and month
 
 	// Map frame and market type from query
-	frame := binance.Frame(dq.Frame)
+	frame := binance.Frame(q.Frame)
 	if frame == "" {
 		frame = binance.OneMinute
 	}
 	var mtype binance.MarketType
-	switch dq.MarketType {
+	switch q.MarketType {
 	case "", string(binance.Spot):
 		mtype = binance.Spot
 	case string(binance.Futures):
@@ -180,8 +182,8 @@ func (s *Server) handleData(w http.ResponseWriter, r *http.Request) {
 		mtype = binance.Spot
 	}
 
-	fromTime := dq.FromTime()
-	toTime := dq.ToTime()
+	fromTime := q.FromTime()
+	toTime := q.ToTime()
 	// start := time.Date(fromTime.Year(), fromTime.Month(), fromTime.Day(), 0, 0, 0, 0, time.UTC)
 	// end := time.Date(toTime.Year(), toTime.Month(), toTime.Day(), 0, 0, 0, 0, time.UTC)
 	start := *fromTime
@@ -198,7 +200,7 @@ func (s *Server) handleData(w http.ResponseWriter, r *http.Request) {
 			Frame:      frame,
 			Indicator:  binance.Klines,
 			Date:       cur,
-			Market:     dq.Market,
+			Market:     q.Market,
 		}
 
 		// Download and transform (this should create or reuse parquet file)
@@ -226,61 +228,32 @@ func (s *Server) handleData(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Query klines data
-	q := `SELECT
-	year, month, day,
-    *
-	FROM read_parquet('data/%<mtype>s/daily/klines/%<market>s/%<frame>s/*/*/*.parquet', hive_partitioning = true)
-	-- FROM "data/%<mtype>s/daily/klines/%<market>s/%<frame>s/%<market>s-%<frame>s-*.parquet"
+	result, err := s.DbQuery(`SELECT
+	    *
+	FROM
+		read_parquet(
+			'data/%<mtype>s/daily/%<indicator>s/%<market>s/%<frame>s/*/*/*.parquet',
+			hive_partitioning = true
+		)
 	where
 		open_time > epoch_ms(%<from>d)::TIMESTAMP
 	AND
 		close_time <= epoch_ms(%<to>d)::TIMESTAMP
 	order by
 		close_time desc
-	`
-	query := format.Sprintf(q, map[string]any{
-		"market": dq.Market,
-		"frame":  frame,
-		"mtype":  dq.MarketType,
-		"from":   fromTime.UnixMilli(),
-		"to":     toTime.UnixMilli(),
+	`, map[string]any{
+		"market":    q.Market,
+		"frame":     frame,
+		"indicator": q.Indicator,
+		"mtype":     q.MarketType,
+		"from":      fromTime.UnixMilli(),
+		"to":        toTime.UnixMilli(),
 	})
 
-	log.Printf("Executing query: %s", q)
-	rows, err := s.db.Query(query, dq.Market, dq.From, dq.To)
 	if err != nil {
 		log.Printf("Query error: %v", err)
 		http.Error(w, "Database query failed", http.StatusInternalServerError)
 		return
-	}
-	defer rows.Close()
-
-	// Get column names
-	columns, err := rows.Columns()
-	if err != nil {
-		log.Printf("Columns error: %v", err)
-		http.Error(w, "Failed to get columns", http.StatusInternalServerError)
-		return
-	}
-	log.Printf("Columns: %v", columns)
-
-	// Convert to JSON
-	var result []any
-	for rows.Next() {
-		// Create a slice of interface{} to hold the values
-		valuePtrs := make([]interface{}, len(columns))
-		for i := range valuePtrs {
-			valuePtrs[i] = new(string)
-		}
-
-		// Scan into the slice
-		err := rows.Scan(valuePtrs...)
-		if err != nil {
-			log.Printf("Scan error: %v", err)
-			continue
-		}
-
-		result = append(result, valuePtrs)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -410,4 +383,82 @@ func (s *Server) Validate(dq any, w http.ResponseWriter, r *http.Request) error 
 		}
 	}
 	return nil
+}
+
+func (s *Server) DbQuery(
+	query string,
+	dq any,
+) (result []any, err error) {
+	q := format.Sprintf(query, dq)
+	log.Printf("Executing query: %s", q)
+	rows, err := s.db.Query(q)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute query: %w", err)
+	}
+	defer rows.Close()
+
+	// Get column names
+	columns, err := rows.Columns()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get columns: %w", err)
+	}
+	log.Printf("Columns: %v", columns)
+
+	// Convert to JSON
+	for rows.Next() {
+		// Create a slice of interface{} to hold the values
+		valuePtrs := make([]any, len(columns))
+		for i, name := range columns {
+			// if string contain time or timestamp or date, then it should be int
+			if strings.Contains(name, "time") ||
+				strings.Contains(name, "timestamp") ||
+				strings.Contains(name, "date") {
+				valuePtrs[i] = new(ResponseDate)
+			} else if strings.Contains(name, "volume") ||
+				strings.Contains(name, "float") ||
+				strings.Contains(name, "price") {
+				valuePtrs[i] = new(float64)
+			} else {
+				valuePtrs[i] = new(string)
+			}
+		}
+
+		// Scan into the slice
+		err := rows.Scan(valuePtrs...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan row: %w", err)
+		}
+
+		// Create map
+		valueMap := make(map[string]any)
+		for i, name := range columns {
+			valueMap[name] = valuePtrs[i]
+		}
+
+		// v := new(CandleResponse)
+		// err = mapstructure.WeakDecode(valuePtrs, v)
+		// if err != nil {
+		// 	return nil, fmt.Errorf("failed to decode row: %w", err)
+		// }
+
+		result = append(result, valueMap)
+	}
+	return result, nil
+}
+
+type ResponseDate time.Time
+
+// MarshalJSON implements the json.Marshaler interface
+func (r ResponseDate) MarshalJSON() ([]byte, error) {
+	return json.Marshal(time.Time(r).UnixMilli())
+}
+
+type CandleResponse struct {
+	OpenTime  time.Time `json:"openTime"`
+	CloseTime time.Time `json:"closeTime"`
+	Open      float64   `json:"open"`
+	High      float64   `json:"high"`
+	Low       float64   `json:"low"`
+	Close     float64   `json:"close"`
+	Volume    float64   `json:"volume"`
 }
