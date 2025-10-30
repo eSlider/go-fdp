@@ -127,14 +127,20 @@ func (dq *AssetRequest) ToTime() *time.Time {
 }
 
 type FieldError struct {
-	Field   string `json:"field"`
-	Tag     string `json:"tag"`
-	Param   string `json:"param"`
-	Message string `json:"message"`
+	Field   string `json:"field,omitempty"`
+	Value   any    `json:"value,omitempty"`
+	Tag     string `json:"tag,omitempty"`
+	Param   string `json:"param,omitempty"`
+	Message string `json:"message,omitempty"`
+	Error   error  `json:"error,omitempty"`
 }
-type ErrorsResponse struct {
+type FieldErrorResponse struct {
 	Message string       `json:"message"`
 	Errors  []FieldError `json:"errors"`
+}
+
+type ErrorResponse struct {
+	Message string `json:"message"`
 }
 
 // handleData handles the /v1/data endpoint for candle data
@@ -147,15 +153,18 @@ func (s *Server) handleData(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.Validate(q, w, r); err != nil {
-		log.Fatalf("Validation error: %v", err)
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte(err.Error()))
+		http.Error(w, "Validation failed", http.StatusBadRequest)
 		return
 	}
 
 	// Basic presence checks for required numeric fields
 	if q.Market == "" {
-		http.Error(w, "Missing required parameters: from, to, market", http.StatusBadRequest)
+		s.WriteError(w, FieldErrorResponse{
+			"Missing required field",
+			[]FieldError{{
+				Field: "market",
+			}}},
+			http.StatusBadRequest)
 		return
 	}
 
@@ -253,13 +262,14 @@ func (s *Server) handleData(w http.ResponseWriter, r *http.Request) {
 	})
 
 	if err != nil {
-		log.Printf("Query error: %v", err)
-		http.Error(w, "Database query failed", http.StatusInternalServerError)
+		s.WriteError(w, FieldErrorResponse{
+			"Database query failed",
+			[]FieldError{{Error: err}}},
+			http.StatusInternalServerError)
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
+	s.WriteJson(w, result)
 }
 
 // handleSQL handles the /v1/sql endpoint for raw SQL queries
@@ -367,12 +377,13 @@ func (s *Server) Validate(dq any, w http.ResponseWriter, r *http.Request) error 
 		w.WriteHeader(http.StatusBadRequest)
 
 		// Return validation errors
-		resp := ErrorsResponse{Message: "Validation failed"}
+		resp := FieldErrorResponse{Message: "Validation failed"}
 		var ve validator.ValidationErrors
 		if errors.As(err, &ve) {
 			for _, e := range ve {
 				resp.Errors = append(resp.Errors, FieldError{
 					Field:   e.Field(),
+					Value:   e.Value(),
 					Tag:     e.Tag(),
 					Param:   e.Param(),
 					Message: e.Error(),
@@ -446,6 +457,18 @@ func (s *Server) DbQuery(
 		result = append(result, valueMap)
 	}
 	return result, nil
+}
+
+func (s *Server) WriteError(w http.ResponseWriter, err FieldErrorResponse, code int) {
+	// Write header
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(err)
+	w.WriteHeader(code)
+}
+
+func (s *Server) WriteJson(w http.ResponseWriter, result []any) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
 }
 
 type ResponseDate time.Time
