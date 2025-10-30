@@ -9,14 +9,16 @@ import (
 	"strconv"
 	"time"
 
+	_ "github.com/duckdb/duckdb-go/v2"
+	"github.com/go-playground/validator/v10"
 	"github.com/gorilla/mux"
-	_ "github.com/marcboeker/go-duckdb"
 )
 
 // Server represents the API server
 type Server struct {
-	db     *sql.DB
-	router *mux.Router
+	db       *sql.DB
+	router   *mux.Router
+	validate *validator.Validate
 }
 
 // NewServer creates a new API server
@@ -34,8 +36,9 @@ func NewServer() (*Server, error) {
 	}
 
 	s := &Server{
-		db:     db,
-		router: mux.NewRouter(),
+		db:       db,
+		router:   mux.NewRouter(),
+		validate: validator.New(),
 	}
 
 	s.setupRoutes()
@@ -88,35 +91,47 @@ func (s *Server) setupRoutes() {
 	s.router.HandleFunc("/v1/sql", s.handleSQL).Methods("POST")
 }
 
+// DataQuery represents query parameters for /v1/data with validation rules
+// All time values are milliseconds since epoch.
+type DataQuery struct {
+	From       int64  `validate:"required"`
+	To         int64  `validate:"required,gtfield=From"`
+	Market     string `validate:"required"`
+	Exchange   string `validate:"omitempty,oneof=binance"`
+	MarketType string `validate:"omitempty,oneof=spot futures"`
+	Frame      string `validate:"omitempty,oneof=1m 3m 5m 15m 30m 1h 2h 4h 6h 8h 12h 1d 3d 1w 1M"`
+}
+
 // handleData handles the /v1/data endpoint for candle data
 func (s *Server) handleData(w http.ResponseWriter, r *http.Request) {
-	// Parse query parameters
-	fromStr := r.URL.Query().Get("from")
-	toStr := r.URL.Query().Get("to")
-	market := r.URL.Query().Get("market")
-	exchange := r.URL.Query().Get("exchange")
-	marketType := r.URL.Query().Get("marketType")
-	frame := r.URL.Query().Get("frame")
+	q := r.URL.Query()
 
+	// Fetch all query parameters at once
+	fromStr := q.Get("from")
+	toStr := q.Get("to")
+	market := q.Get("market")
+	exchange := q.Get("exchange")
+	marketType := q.Get("marketType")
+	frame := q.Get("frame")
+
+	// Basic presence checks for required numeric fields
 	if fromStr == "" || toStr == "" || market == "" {
 		http.Error(w, "Missing required parameters: from, to, market", http.StatusBadRequest)
 		return
 	}
 
-	// Parse timestamps
 	from, err := strconv.ParseInt(fromStr, 10, 64)
 	if err != nil {
 		http.Error(w, "Invalid 'from' timestamp", http.StatusBadRequest)
 		return
 	}
-
 	to, err := strconv.ParseInt(toStr, 10, 64)
 	if err != nil {
 		http.Error(w, "Invalid 'to' timestamp", http.StatusBadRequest)
 		return
 	}
 
-	// Default values
+	// Apply defaults
 	if exchange == "" {
 		exchange = "binance"
 	}
@@ -125,6 +140,40 @@ func (s *Server) handleData(w http.ResponseWriter, r *http.Request) {
 	}
 	if frame == "" {
 		frame = "1m"
+	}
+
+	// Build DTO and validate
+	dq := DataQuery{
+		From:       from,
+		To:         to,
+		Market:     market,
+		Exchange:   exchange,
+		MarketType: marketType,
+		Frame:      frame,
+	}
+
+	if err := s.validate.Struct(dq); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		// Translate validation errors to a simple list
+		type verr struct {
+			Field string `json:"field"`
+			Tag   string `json:"tag"`
+			Param string `json:"param"`
+		}
+		resp := struct {
+			Message string `json:"message"`
+			Errors  []verr `json:"errors"`
+		}{Message: "Validation failed"}
+		if ve, ok := err.(validator.ValidationErrors); ok {
+			for _, e := range ve {
+				resp.Errors = append(resp.Errors, verr{Field: e.Field(), Tag: e.Tag(), Param: e.Param()})
+			}
+		} else {
+			resp.Errors = append(resp.Errors, verr{Field: "", Tag: "error", Param: err.Error()})
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+		return
 	}
 
 	// Query klines data
@@ -148,8 +197,8 @@ func (s *Server) handleData(w http.ResponseWriter, r *http.Request) {
 	ORDER BY open_time
 	`
 
-	log.Printf("Executing query: %s with params: %s, %d, %d", query, market, from, to)
-	rows, err := s.db.Query(query, market, from, to)
+	log.Printf("Executing query: %s with params: %s, %d, %d", query, dq.Market, dq.From, dq.To)
+	rows, err := s.db.Query(query, dq.Market, dq.From, dq.To)
 	if err != nil {
 		log.Printf("Query error: %v", err)
 		http.Error(w, "Database query failed", http.StatusInternalServerError)

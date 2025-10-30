@@ -60,6 +60,7 @@ This repository explores a proxy approach: discover, download, decompress, and p
 
 - Go 1.24+
 - Network access to AWS S3 (data.binance.vision)
+- Build tag: `no_duckdb_arrow` (required to disable Apache Arrow dependencies)
 
 ## Installation
 
@@ -71,12 +72,12 @@ go mod download
 
 Run directly:
 ```bash
-go run ./
+go run -tags no_duckdb_arrow ./
 ```
 
 Build binary:
 ```bash
-go build -o binance-sync
+go build -tags no_duckdb_arrow -o binance-sync
 ./binance-sync
 ```
 
@@ -126,13 +127,13 @@ go build -o binance-sync
 ```bash
 go mod tidy      # Clean dependencies
 go fmt ./...     # Format code
-go test ./...    # Run tests
-go test -race ./...  # Run tests with race detection
+go test -tags no_duckdb_arrow ./...    # Run tests
+go test -tags no_duckdb_arrow -race ./...  # Run tests with race detection
 ```
 
 ### Testing
-- Unit tests: `go test ./...`
-- Integration tests: `go test -tags=integration ./...`
+- Unit tests: `go test -tags no_duckdb_arrow ./...`
+- Integration tests: `go test -tags no_duckdb_arrow,integration ./...`
 
 ## Roadmap
 

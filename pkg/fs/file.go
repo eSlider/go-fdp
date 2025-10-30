@@ -18,6 +18,8 @@ func FileExists(path string) bool {
 	// Check if error is nil or not exists
 	return err == nil || os.IsExist(err)
 }
+
+// ModuleRootPath returns the root path of the module
 func ModuleRootPath() string {
 	_, filename, _, _ := runtime.Caller(0)
 	root := strings.Split(filename, "/")

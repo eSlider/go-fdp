@@ -257,8 +257,8 @@ type Kline struct {
 }
 
 type ParquetKline struct {
-	OpenTime  int64   `parquet:"name=open_time,type=INT64,logicaltype=TIME,logicaltype.isadjustedtoutc=true,logicaltype.unit=MILLIS"`
-	CloseTime int64   `parquet:"name=close_time,type=INT64,logicaltype=TIME,logicaltype.isadjustedtoutc=true,logicaltype.unit=MILLIS"`
+	OpenTime  int32   `parquet:"name=open_time,type=INT32, logicaltype=TIME, logicaltype.isadjustedtoutc=true, logicaltype.unit=MILLIS"`
+	CloseTime int32   `parquet:"name=close_time,type=INT32, logicaltype=TIME, logicaltype.isadjustedtoutc=true, logicaltype.unit=MILLIS"`
 	Open      float64 `parquet:"name=open_price, type=DOUBLE"`
 	High      float64 `parquet:"name=high_price, type=DOUBLE"`
 	Low       float64 `parquet:"name=low_price, type=DOUBLE"`
@@ -295,7 +295,7 @@ type AggTrade struct {
 }
 
 type ParquetAggTrade struct {
-	Timestamp    int64   `parquet:"name=ts,type=INT64,type=INT64,logicaltype=TIME,logicaltype.isadjustedtoutc=true,logicaltype.unit=MILLIS"`
+	Timestamp    int32   `parquet:"name=ts,type=INT32, logicaltype=TIME, logicaltype.isadjustedtoutc=true, logicaltype.unit=MILLIS"`
 	AggTradeID   int64   `parquet:"name=agg_trade_id,type=INT64,convertedtype=UINT_64"`
 	FirstTradeID int64   `parquet:"name=first_trade_id,type=INT64,convertedtype=UINT_64"`
 	LastTradeID  int64   `parquet:"name=last_trade_id,type=INT64,convertedtype=UINT_64"`
@@ -338,15 +338,15 @@ func NewParquetKline(kline *Kline) *ParquetKline {
 	}
 }
 
-func ToMs(ts int64) (v int64) {
+func ToMs(ts int64) (v int32) {
 	tp := TypeOfTimestamp(ts)
 	switch tp {
 	case TimestampInMicros:
-		v = int64(ts / 1000)
+		v = int32(ts / 1000)
 	case TimestampInSeconds:
-		v = int64(ts * 1000)
+		v = int32(ts * 1000)
 	case TimestampInMillis:
-		v = int64(ts)
+		v = int32(ts)
 	}
 	return v
 }

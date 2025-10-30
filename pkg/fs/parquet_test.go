@@ -2,28 +2,37 @@ package fs
 
 import (
 	"fmt"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 // TestRecord represents a simple record for testing
 type TestRecord struct {
-	ID     int     `parquet:"name=id, type=INT64"`
-	Name   string  `parquet:"name=name, type=BYTE_ARRAY, convertedtype=UTF8"`
-	Value  float64 `parquet:"name=value, type=DOUBLE"`
-	Active bool    `parquet:"name=active, type=BOOLEAN"`
+	ID              int     `parquet:"name=id, type=INT64"`
+	Name            string  `parquet:"name=name, type=BYTE_ARRAY, convertedtype=UTF8"`
+	Value           float64 `parquet:"name=value, type=DOUBLE"`
+	Active          bool    `parquet:"name=active, type=BOOLEAN"`
+	MsTime          int32   `parquet:"name=open_time,type=INT32,logicaltype=TIME,logicaltype.isadjustedtoutc=true,logicaltype.unit=MILLIS"`
+	TimestampMicros int64   `parquet:"name=timestampmicros, type=INT64, convertedtype=TIMESTAMP_MICROS"`
+	TimeMillis2     int32   `parquet:"name=timemillis2, type=INT32, logicaltype=TIME,logicaltype.isadjustedtoutc=true, logicaltype.unit=MILLIS"`
 }
 
 func TestWriteParquet(t *testing.T) {
 	t.Run("writes records successfully", func(t *testing.T) {
 		// Create a temporary file path
-		tmpDir := t.TempDir()
+		tmpDir := GetTestDir()
 		filePath := filepath.Join(tmpDir, "test.parquet")
 
 		// Create test records
 		records := []TestRecord{
-			{ID: 1, Name: "Alice", Value: 123.45, Active: true},
+			{ID: 1, Name: "Alice", Value: 123.45, Active: true,
+				MsTime:          1631606400,
+				TimestampMicros: 1631606400000000,
+				TimeMillis2:     1631606400,
+			},
 			{ID: 2, Name: "Bob", Value: 678.90, Active: false},
 		}
 
@@ -159,6 +168,15 @@ func TestWriteParquet(t *testing.T) {
 			t.Fatal("parquet file was not created")
 		}
 	})
+}
+
+// GetTestDir returns a temporary directory for testing
+func GetTestDir() string {
+	// Random
+	tmpDir := ModuleRootPath() + "/var/test/" + "test_" + fmt.Sprintf("%010d", time.Now().UnixNano()) + "_" + fmt.Sprintf("%010d", rand.Int63())
+	os.RemoveAll(tmpDir)
+	os.MkdirAll(tmpDir, 0755)
+	return tmpDir
 }
 
 // TestReadParquet tests reading records from parquet files
@@ -383,7 +401,10 @@ func BenchmarkReadParquet(b *testing.B) {
 		}
 	}()
 
-	for range writeErrCh {
+	for err := range writeErrCh {
+		if err != nil {
+			b.Errorf("Err %v", err)
+		}
 		// Wait for write completion
 	}
 

@@ -53,8 +53,8 @@ func WriteParquet[T any](
 		defer pw.WriteStop()
 
 		// len(csvData.Bytes())/6
-		pw.RowGroupSize = 1 * 1024 * 1024                  // 1
-		pw.PageSize = 8 * 1024                             // default 8K
+		// pw.RowGroupSize = 1 * 1024 * 1024                  // 1
+		// pw.PageSize = 8 * 1024                             // default 8K
 		pw.CompressionType = parquet.CompressionCodec_ZSTD // Best compression and decompression speed
 
 		// Read records from the channel until it is closed
