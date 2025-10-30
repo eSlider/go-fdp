@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"strconv"
 	"sync-v3/pkg/binance"
 	"sync-v3/pkg/data"
 	"time"
@@ -171,17 +170,19 @@ func (s *Server) handleData(w http.ResponseWriter, r *http.Request) {
 
 	fromTime := dq.FromTime()
 	toTime := dq.ToTime()
-	start := time.Date(fromTime.Year(), fromTime.Month(), 1, 0, 0, 0, 0, time.UTC)
-	end := time.Date(toTime.Year(), toTime.Month(), 1, 0, 0, 0, 0, time.UTC)
+	// start := time.Date(fromTime.Year(), fromTime.Month(), fromTime.Day(), 0, 0, 0, 0, time.UTC)
+	// end := time.Date(toTime.Year(), toTime.Month(), toTime.Day(), 0, 0, 0, 0, time.UTC)
+	start := *fromTime
+	end := *toTime
 
 	// Collect results
 	var infos []*binance.AssetETLInfo
 	var errs []error
 
-	for cur := start; !cur.After(end); cur = cur.AddDate(0, 1, 0) {
+	for cur := start; !cur.After(end); cur = cur.AddDate(0, 0, 1) {
 		asset := &binance.HistoryAsset{
 			MarketType: mtype,
-			Frequency:  binance.Monthly,
+			Frequency:  binance.Daily,
 			Frame:      frame,
 			Indicator:  binance.Klines,
 			Date:       cur,

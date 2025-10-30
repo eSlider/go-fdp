@@ -3,12 +3,23 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync-v3/pkg/binance"
 	"sync-v3/pkg/data"
 	"sync-v3/pkg/fs"
 	"testing"
 	"time"
 )
+
+func TestTimeBetween(t *testing.T) {
+	start := *data.AnyTimestampToTime(1596327180)
+	end := (*data.AnyTimestampToTime(1596327239)).Add(time.Hour * 24 * 2)
+
+	// Trace time between start and end every day
+	for day := start; day.Before(end); day = day.AddDate(0, 0, 1) {
+		fmt.Println(day)
+	}
+}
 
 func TestMainProgramParquetCreation(t *testing.T) {
 	t.Run("creates and reads parquet files correctly", func(t *testing.T) {
@@ -22,10 +33,10 @@ func TestMainProgramParquetCreation(t *testing.T) {
 		// This date has existing data and we can verify the count
 		asset := &binance.HistoryAsset{
 			MarketType: binance.Spot,
-			Frequency:  binance.Monthly,
+			Frequency:  binance.Daily,
 			Frame:      binance.OneMinute,
 			Indicator:  binance.Klines,
-			Date:       time.Date(2020, 8, 1, 0, 0, 0, 0, time.UTC),
+			Date:       time.Date(2020, 8, 2, 0, 0, 0, 0, time.UTC),
 			Market:     "ETHUSDT",
 		}
 

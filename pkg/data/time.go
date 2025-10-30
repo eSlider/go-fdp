@@ -24,7 +24,7 @@ const (
 
 func TypeOfTimestamp(ts int64) TimestampType {
 	switch {
-	case ts > 1e18:
+	case ts > 1e15:
 		return TimestampInMicros
 	case ts > 1e12:
 		return TimestampInMillis
