@@ -286,8 +286,8 @@ type Kline struct {
 }
 
 type ParquetKline struct {
-	OpenTime  int64   `parquet:"name=open_time,type=INT64, logicaltype=TIMESTAMP, logicaltype.isadjustedtoutc=false,logicaltype.unit=MICROS"`
-	CloseTime int64   `parquet:"name=close_time,type=INT64, logicaltype=TIMESTAMP, logicaltype.isadjustedtoutc=false,logicaltype.unit=MICROS"`
+	OpenTime  int64   `parquet:"name=open_time,type=INT64, logicaltype=TIMESTAMP, logicaltype.isadjustedtoutc=true, logicaltype.unit=MICROS"`
+	CloseTime int64   `parquet:"name=close_time,type=INT64, logicaltype=TIMESTAMP, logicaltype.isadjustedtoutc=true, logicaltype.unit=MICROS"`
 	Open      float64 `parquet:"name=open_price, type=DOUBLE"`
 	High      float64 `parquet:"name=high_price, type=DOUBLE"`
 	Low       float64 `parquet:"name=low_price, type=DOUBLE"`

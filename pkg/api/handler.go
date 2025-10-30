@@ -227,6 +227,7 @@ func (s *Server) handleData(w http.ResponseWriter, r *http.Request) {
 
 	// Query klines data
 	q := `SELECT
+	year, month, day,
     *
 	FROM read_parquet('data/%<mtype>s/daily/klines/%<market>s/%<frame>s/*/*/*.parquet', hive_partitioning = true)
 	-- FROM "data/%<mtype>s/daily/klines/%<market>s/%<frame>s/%<market>s-%<frame>s-*.parquet"
@@ -264,7 +265,7 @@ func (s *Server) handleData(w http.ResponseWriter, r *http.Request) {
 	log.Printf("Columns: %v", columns)
 
 	// Convert to JSON
-	var candles []any
+	var result []any
 	for rows.Next() {
 		// Create a slice of interface{} to hold the values
 		valuePtrs := make([]interface{}, len(columns))
@@ -272,16 +273,18 @@ func (s *Server) handleData(w http.ResponseWriter, r *http.Request) {
 			valuePtrs[i] = new(string)
 		}
 
+		// Scan into the slice
 		err := rows.Scan(valuePtrs...)
 		if err != nil {
 			log.Printf("Scan error: %v", err)
 			continue
 		}
-		candles = append(candles, valuePtrs)
+
+		result = append(result, valuePtrs)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(candles)
+	json.NewEncoder(w).Encode(result)
 }
 
 // handleSQL handles the /v1/sql endpoint for raw SQL queries
