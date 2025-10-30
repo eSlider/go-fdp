@@ -56,6 +56,8 @@ type HistoryConsumer struct {
 
 	// Options
 	RecreateParquet bool // Recreate parquet files if they already exist
+	StoreZip        bool // Store zip files locally
+	StoreCSV        bool // Store CSV files locally
 }
 
 type ListResult struct {
@@ -129,7 +131,7 @@ func (s *HistoryConsumer) DownloadAndTransform(
 		}
 
 		link := asset.SymbolDateAssetZipLink()
-		parquetPath := strings.TrimSuffix(link, ".zip") + ".parquet"
+		parquetPath := asset.ParquetPath()
 
 		if s.RecreateParquet {
 			os.Remove(parquetPath)
@@ -159,18 +161,20 @@ func (s *HistoryConsumer) DownloadAndTransform(
 					errCh <- fmt.Errorf("error decompressing zip file: %v", err)
 					continue
 				}
-				// Store CSV file parallel to ZIP
-				csvPath := strings.TrimSuffix(link, ".zip") + ".csv"
-				infoCh <- &AssetETLInfo{
-					Path:   csvPath,
-					Status: StatusReadingCsv,
-					Buffer: csvBuffer,
-					Err:    csvBuffer.Persist(csvPath),
+
+				if s.StoreCSV {
+					// Store CSV file parallel to ZIP
+					csvPath := strings.TrimSuffix(link, ".zip") + ".csv"
+					infoCh <- &AssetETLInfo{
+						Path:   csvPath,
+						Status: StatusReadingCsv,
+						Buffer: csvBuffer,
+						Err:    csvBuffer.Persist(csvPath),
+					}
 				}
 
 				// asset.Indicator == AggTrades
 				// if asset.Indicator == Klines {
-
 				csvReadCh, csvErrCh := data.ReadHeaderlessCSVChan[Kline](csvBuffer)
 				parquetWriteCh, prqErrCh := data.WriteParquet[ParquetKline](parquetPath)
 				wroteKlines := 0
@@ -259,38 +263,41 @@ func (s *HistoryConsumer) CacheZip(path string) (info chan *AssetETLInfo) {
 		// Do we cache the file?
 		if fs.FileExists(path) {
 			// Read zip
-			buf, err := data.ReadIntoBuffer(path)
+			compressedBuf, err := data.ReadIntoBuffer(path)
 			info <- &AssetETLInfo{
 				Path:   path,
 				Status: StatusReadingZip,
-				Buffer: buf,
+				Buffer: compressedBuf,
 				Err:    err,
 			}
 
 			log.Printf("File %s already exists, loaded from disk", path)
 		} else {
 			// Download the file if it doesn't exist
-			buf := &data.Buffer{}
+			compressedBuf := &data.Buffer{}
 			info <- &AssetETLInfo{
 				Path:   path,
 				Status: StatusDownloading,
 			}
-			_, err1 := s.Download(path, buf)
+			_, err1 := s.Download(path, compressedBuf)
 			a := &AssetETLInfo{
 				Path:   path,
 				Status: StatusReadingZip,
-				Buffer: buf,
+				Buffer: compressedBuf,
 				Err:    err1,
 			}
 			info <- a
 
-			// ReadCSV existing file
-			info <- &AssetETLInfo{
-				Path:   path,
-				Status: StatusPersistingZip,
-				Buffer: buf,
-				Err:    buf.Persist(path),
+			if s.StoreZip {
+				// Store zip file
+				info <- &AssetETLInfo{
+					Path:   path,
+					Status: StatusPersistingZip,
+					Buffer: compressedBuf,
+					Err:    compressedBuf.Persist(path),
+				}
 			}
+
 		}
 	}()
 
@@ -372,7 +379,8 @@ func NewHistoryConsumer(ctx context.Context) (*HistoryConsumer, error) {
 	client := s3.NewFromConfig(*cfg)
 	downloader := manager.NewDownloader(client)
 	return &HistoryConsumer{
-		RecreateParquet: true,
+		RecreateParquet: false,
+		StoreZip:        false,
 		bucket:          "data.binance.vision",
 		client:          client,
 		downloader:      downloader,

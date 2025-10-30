@@ -11,6 +11,7 @@ import (
 	"sync-v3/pkg/data"
 	"time"
 
+	"github.com/chonla/format"
 	_ "github.com/duckdb/duckdb-go/v2"
 	"github.com/go-playground/validator/v10"
 	"github.com/go-viper/mapstructure/v2"
@@ -50,40 +51,40 @@ func NewServer() (*Server, error) {
 
 // setupTables creates DuckDB tables that point to parquet files
 func setupTables(db *sql.DB) error {
-	// First test if we can read parquet directly
-	testSQL := `SELECT COUNT(*) FROM read_parquet('data/spot/monthly/klines/ETHUSDT/1m/ETHUSDT-1m-2020-08.parquet')`
-	var count int
-	if err := db.QueryRow(testSQL).Scan(&count); err != nil {
-		log.Printf("Warning: cannot read klines parquet: %v", err)
-	} else {
-		log.Printf("Successfully read %d records from klines parquet", count)
-	}
-
-	// Create table for klines (candles)
-	klinesSQL := `
-	CREATE OR REPLACE TABLE klines AS
-	SELECT *
-	FROM read_parquet('data/spot/monthly/klines/**/*.parquet')
-	`
-
-	if _, err := db.Exec(klinesSQL); err != nil {
-		log.Printf("Warning: failed to create klines table: %v", err)
-	} else {
-		log.Printf("Successfully created klines table")
-	}
-
-	// Create table for agg_trades
-	aggTradesSQL := `
-	CREATE OR REPLACE TABLE agg_trades AS
-	SELECT *
-	FROM read_parquet('data/spot/monthly/aggTrades/**/*.parquet')
-	`
-
-	if _, err := db.Exec(aggTradesSQL); err != nil {
-		log.Printf("Warning: failed to create agg_trades table: %v", err)
-	} else {
-		log.Printf("Successfully created agg_trades table")
-	}
+	// // First test if we can read parquet directly
+	// testSQL := `SELECT COUNT(*) FROM read_parquet('data/spot/monthly/klines/ETHUSDT/1m/ETHUSDT-1m-2020-08.parquet')`
+	// var count int
+	// if err := db.QueryRow(testSQL).Scan(&count); err != nil {
+	// 	log.Printf("Warning: cannot read klines parquet: %v", err)
+	// } else {
+	// 	log.Printf("Successfully read %d records from klines parquet", count)
+	// }
+	//
+	// // Create table for klines (candles)
+	// klinesSQL := `
+	// CREATE OR REPLACE TABLE klines AS
+	// SELECT *
+	// FROM read_parquet('data/spot/monthly/klines/**/*.parquet')
+	// `
+	//
+	// if _, err := db.Exec(klinesSQL); err != nil {
+	// 	log.Printf("Warning: failed to create klines table: %v", err)
+	// } else {
+	// 	log.Printf("Successfully created klines table")
+	// }
+	//
+	// // Create table for agg_trades
+	// aggTradesSQL := `
+	// CREATE OR REPLACE TABLE agg_trades AS
+	// SELECT *
+	// FROM read_parquet('data/spot/monthly/aggTrades/**/*.parquet')
+	// `
+	//
+	// if _, err := db.Exec(aggTradesSQL); err != nil {
+	// 	log.Printf("Warning: failed to create agg_trades table: %v", err)
+	// } else {
+	// 	log.Printf("Successfully created agg_trades table")
+	// }
 
 	return nil
 }
@@ -100,8 +101,8 @@ type DataQuery struct {
 	From       int64  `validate:"required"`              // Millisecond timestamp
 	To         int64  `validate:"required,gtfield=From"` // Millisecond timestamp
 	Market     string `validate:"required"`
-	Exchange   string `validate:"omitempty,oneof=binance"`
-	MarketType string `validate:"omitempty,oneof=spot futures"`
+	Exchange   string `validate:"omitempty"`
+	MarketType string `validate:"omitempty,oneof=spot futures options"`
 	Frame      string `validate:"omitempty,oneof=1m 3m 5m 15m 30m 1h 2h 4h 6h 8h 12h 1d 3d 1w 1M"`
 }
 
@@ -225,27 +226,26 @@ func (s *Server) handleData(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Query klines data
-	query := `
-	SELECT
-		open_time,
-		close_time,
-		open_price,
-		high_price,
-		low_price,
-		close_price,
-		volume,
-		quote_volume,
-		number_of_trades,
-		taker_buy_volume,
-		taker_buy_quote
-	FROM klines
-	WHERE symbol = ?
-		AND open_time >= ?
-		AND open_time <= ?
-	ORDER BY open_time
+	q := `SELECT
+    *
+	FROM read_parquet('data/%<mtype>s/daily/klines/%<market>s/%<frame>s/*/*/*.parquet', hive_partitioning = true)
+	-- FROM "data/%<mtype>s/daily/klines/%<market>s/%<frame>s/%<market>s-%<frame>s-*.parquet"
+	where
+		open_time > epoch_ms(%<from>d)::TIMESTAMP
+	AND
+		close_time <= epoch_ms(%<to>d)::TIMESTAMP
+	order by
+		close_time desc
 	`
+	query := format.Sprintf(q, map[string]any{
+		"market": dq.Market,
+		"frame":  frame,
+		"mtype":  dq.MarketType,
+		"from":   fromTime.UnixMilli(),
+		"to":     toTime.UnixMilli(),
+	})
 
-	log.Printf("Executing query: %s with params: %s, %d, %d", query, dq.Market, dq.From, dq.To)
+	log.Printf("Executing query: %s", q)
 	rows, err := s.db.Query(query, dq.Market, dq.From, dq.To)
 	if err != nil {
 		log.Printf("Query error: %v", err)
@@ -254,33 +254,30 @@ func (s *Server) handleData(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 
-	// Convert to JSON
-	var candles []map[string]interface{}
-	for rows.Next() {
-		var openTime, closeTime, numberOfTrades int64
-		var openPrice, highPrice, lowPrice, closePrice, volume, quoteVolume, takerBuyVolume, takerBuyQuote float64
+	// Get column names
+	columns, err := rows.Columns()
+	if err != nil {
+		log.Printf("Columns error: %v", err)
+		http.Error(w, "Failed to get columns", http.StatusInternalServerError)
+		return
+	}
+	log.Printf("Columns: %v", columns)
 
-		err := rows.Scan(&openTime, &closeTime, &openPrice, &highPrice, &lowPrice, &closePrice,
-			&volume, &quoteVolume, &numberOfTrades, &takerBuyVolume, &takerBuyQuote)
+	// Convert to JSON
+	var candles []any
+	for rows.Next() {
+		// Create a slice of interface{} to hold the values
+		valuePtrs := make([]interface{}, len(columns))
+		for i := range valuePtrs {
+			valuePtrs[i] = new(string)
+		}
+
+		err := rows.Scan(valuePtrs...)
 		if err != nil {
 			log.Printf("Scan error: %v", err)
 			continue
 		}
-
-		candle := map[string]interface{}{
-			"open_time":        openTime,
-			"close_time":       closeTime,
-			"open_price":       openPrice,
-			"high_price":       highPrice,
-			"low_price":        lowPrice,
-			"close_price":      closePrice,
-			"volume":           volume,
-			"quote_volume":     quoteVolume,
-			"number_of_trades": numberOfTrades,
-			"taker_buy_volume": takerBuyVolume,
-			"taker_buy_quote":  takerBuyQuote,
-		}
-		candles = append(candles, candle)
+		candles = append(candles, valuePtrs)
 	}
 
 	w.Header().Set("Content-Type", "application/json")

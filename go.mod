@@ -9,6 +9,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.89.0
 	github.com/duckdb/duckdb-go/v2 v2.5.0
 	github.com/go-playground/validator/v10 v10.28.0
+	github.com/go-viper/mapstructure/v2 v2.4.0
 	github.com/gorilla/mux v1.8.1
 	github.com/jszwec/csvutil v1.10.0
 	github.com/xitongsys/parquet-go v1.6.2
@@ -34,6 +35,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.35.3 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.38.9 // indirect
 	github.com/aws/smithy-go v1.23.1 // indirect
+	github.com/chonla/format v0.0.0-20230227083511-415d7eabd73d // indirect
 	github.com/duckdb/duckdb-go-bindings v0.1.21 // indirect
 	github.com/duckdb/duckdb-go-bindings/darwin-amd64 v0.1.21 // indirect
 	github.com/duckdb/duckdb-go-bindings/darwin-arm64 v0.1.21 // indirect
@@ -45,7 +47,6 @@ require (
 	github.com/gabriel-vasile/mimetype v1.4.10 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
-	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
 	github.com/goccy/go-json v0.10.5 // indirect
 	github.com/golang/snappy v1.0.0 // indirect
 	github.com/google/flatbuffers v25.9.23+incompatible // indirect
@@ -53,6 +54,7 @@ require (
 	github.com/klauspost/compress v1.18.1 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
+	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/pierrec/lz4/v4 v4.1.22 // indirect
 	github.com/stretchr/testify v1.11.1 // indirect
 	github.com/zeebo/xxh3 v1.0.2 // indirect

@@ -12,7 +12,10 @@ import (
 )
 
 func TestTimeBetween(t *testing.T) {
+
+	// start is 2020-08-02 00:00:00 UTC
 	start := *data.AnyTimestampToTime(1596327180)
+	// end is 2020-08-03 00:00:00 UTC
 	end := (*data.AnyTimestampToTime(1596327239)).Add(time.Hour * 24 * 2)
 
 	// Trace time between start and end every day

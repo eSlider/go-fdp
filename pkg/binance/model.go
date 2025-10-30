@@ -3,6 +3,7 @@ package binance
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"sync-v3/pkg/data"
 	"time"
@@ -239,6 +240,28 @@ func (q HistoryAsset) IsZipLink() bool {
 		return q.Frame != ""
 	}
 	return true
+}
+
+// ParquetPath - returns parquet file path
+//   - Create link to work with hive partitioning
+func (q HistoryAsset) ParquetPath() string {
+	link := q.SymbolDateAssetZipLink()
+	path := strings.TrimSuffix(link, ".zip") + ".parquet"
+
+	// Replace file name(not path directories) any - with _:
+	//  - Get file name from abs path
+	fileName := filepath.Base(path)
+
+	// Remove from  "ETHUSDT-1m-2024-06-10", prefix "ETHUSDT-1m-"
+	fileName = strings.TrimLeft(fileName, q.Market+"-"+string(q.Frame)+"-")
+
+	// Replace date like "2020-07-01" with "2020/07/01" to let hive understand it as a date
+	// See https://duckdb.org/docs/stable/data/partitioning/hive_partitioning
+	fileName = strings.ReplaceAll(fileName, "-", "/")
+
+	dirName := filepath.Dir(path)
+
+	return dirName + "/" + fileName
 }
 
 // Transformer - interface for transforming data to several formats
