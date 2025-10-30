@@ -1,6 +1,7 @@
 package binance
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"sync-v3/pkg/data"
@@ -240,6 +241,11 @@ func (q HistoryAsset) IsZipLink() bool {
 	return true
 }
 
+// Transformer - interface for transforming data to several formats
+type Transformer interface {
+	Parquet() (*struct{}, error) // Parquet - transforms the data to parquet format
+}
+
 // Kline - binance kline data
 type Kline struct {
 	OpenTime       int64   `csv:"0"`
@@ -304,7 +310,14 @@ type ParquetAggTrade struct {
 	IsBuyerMaker bool    `parquet:"name=is_buyer_maker,type=BOOLEAN"`
 }
 
-func NewParquetAggTrade(a *AggTrade) *ParquetAggTrade {
+func (a *AggTrade) Parquet() (*ParquetAggTrade, error) {
+	if a == nil {
+		return nil, errors.New("a is nil")
+	}
+	if a.Timestamp == 0 {
+		return nil, errors.New("timestamp is zero")
+	}
+
 	// Check if the timestamp is milliseconds or microseconds
 	return &ParquetAggTrade{
 		Timestamp:    ToMs(a.Timestamp),
@@ -314,28 +327,28 @@ func NewParquetAggTrade(a *AggTrade) *ParquetAggTrade {
 		FirstTradeID: a.FirstTradeID,
 		LastTradeID:  a.LastTradeID,
 		IsBuyerMaker: a.IsBuyerMaker,
-	}
+	}, nil
 }
 
-// NewParquetKline - optimize kline data for parquet
-func NewParquetKline(kline *Kline) *ParquetKline {
-	if kline == nil {
-		return nil
+// Parquet - convert kline to parquet format
+func (k *Kline) Parquet() (*ParquetKline, error) {
+	if k == nil {
+		return nil, errors.New("k is nil")
 	}
 
-	if kline.OpenTime == 0 {
-		return nil
+	if k.OpenTime == 0 {
+		return nil, errors.New("open time is zero")
 	}
 
 	return &ParquetKline{
-		OpenTime:  ToMs(kline.OpenTime),
-		CloseTime: ToMs(kline.CloseTime),
-		Open:      kline.OpenPrice,
-		High:      kline.HighPrice,
-		Low:       kline.LowPrice,
-		Close:     kline.ClosePrice,
-		Volume:    kline.Volume,
-	}
+		OpenTime:  ToMs(k.OpenTime),
+		CloseTime: ToMs(k.CloseTime),
+		Open:      k.OpenPrice,
+		High:      k.HighPrice,
+		Low:       k.LowPrice,
+		Close:     k.ClosePrice,
+		Volume:    k.Volume,
+	}, nil
 }
 
 func ToMs(ts int64) (v int32) {

@@ -168,122 +168,64 @@ func (s *HistoryConsumer) DownloadAndTransform(
 					Err:    csvBuffer.Persist(csvPath),
 				}
 
-				// Store CSV as structured data into duckdb hive partitioned table as parquet files
-				if asset.Indicator == Klines {
-					csvKlineCh, csvErrCh := data.ReadHeaderlessCSVChan[Kline](csvBuffer)
-					parquetKlineCh, prqErrCh := data.WriteParquet[ParquetKline](parquetPath)
-					wroteKlines := 0
+				// asset.Indicator == AggTrades
+				// if asset.Indicator == Klines {
 
-					// Read CSV and write to parquet
-					go func() {
-						for {
-							select {
-							case csvKline, ok := <-csvKlineCh:
-								if !ok {
-									close(parquetKlineCh)
-								}
-								parquetKlineCh <- NewParquetKline(csvKline)
-								wroteKlines++
-							case err, ok := <-csvErrCh:
-								if ok {
-									close(parquetKlineCh)
-									return
-								}
-								close(parquetKlineCh) // Close parquet channel on CSV error
-								infoCh <- &AssetETLInfo{
-									Path:   parquetPath,
-									Status: StatusError,
-									Err:    fmt.Errorf("error reading csv: %v", err),
-								}
-								return
-								// case err, ok := <-prqErrCh:
-								// 	if !ok {
-								// 		continue
-								// 	}
-								// 	close(parquetKlineCh) // Close parquet channel on parquet error
-								// 	infoCh <- &AssetETLInfo{
-								// 		Path:   parquetPath,
-								// 		Status: StatusError,
-								// 		Err:    fmt.Errorf("error writing parquet: %v", err),
-								// 	}
-								// 	return
-							}
-						}
-					}()
+				csvReadCh, csvErrCh := data.ReadHeaderlessCSVChan[Kline](csvBuffer)
+				parquetWriteCh, prqErrCh := data.WriteParquet[ParquetKline](parquetPath)
+				wroteKlines := 0
 
-					// Ensure parquet writer finishes and closes file before reporting done
-					for err := range prqErrCh {
-						if err != nil {
-							infoCh <- &AssetETLInfo{
-								Path:   parquetPath,
-								Status: StatusError,
-								Err:    fmt.Errorf("error writing parquet: %v", err),
-							}
-						}
-					}
-
-					infoCh <- &AssetETLInfo{
-						Path:   parquetPath,
-						Status: StatusParquetDone,
-						Info:   fmt.Sprintf("Wrote %d parquetKlines to parquet", wroteKlines),
-					}
-				} else if asset.Indicator == AggTrades {
-					csvAggCh, csvErrCh := data.ReadHeaderlessCSVChan[AggTrade](csvBuffer)
-					parquetAggCh, prqErrCh := data.WriteParquet[ParquetAggTrade](parquetPath)
-					wroteTrades := 0
-				ETLLoopAgg:
+				// Read CSV and write to parquet
+				go func() {
 					for {
 						select {
-						case csvAgg, ok := <-csvAggCh:
+						case csvEntry, ok := <-csvReadCh:
 							if !ok {
-								close(parquetAggCh)
-								break ETLLoopAgg
+								close(parquetWriteCh)
 							}
-							parquetAggCh <- NewParquetAggTrade(csvAgg)
-							wroteTrades++
+							parquet, err2 := csvEntry.Parquet()
+							if err2 != nil {
+								errCh <- fmt.Errorf("error converting csv entry to parquet: %v", err2)
+								return
+							}
+
+							parquetWriteCh <- parquet
+							wroteKlines++
 						case err, ok := <-csvErrCh:
-							if !ok {
-								close(parquetAggCh)
-								break ETLLoopAgg
+							if ok {
+								close(parquetWriteCh)
+								return
 							}
-							close(parquetAggCh) // Close parquet channel on CSV error
+							close(parquetWriteCh) // Close parquet channel on CSV error
 							infoCh <- &AssetETLInfo{
 								Path:   parquetPath,
 								Status: StatusError,
 								Err:    fmt.Errorf("error reading csv: %v", err),
 							}
-							break ETLLoopAgg
-						case err, ok := <-prqErrCh:
-							if !ok {
-								continue
-							}
-							close(parquetAggCh) // Close parquet channel on parquet error
-							infoCh <- &AssetETLInfo{
-								Path:   parquetPath,
-								Status: StatusError,
-								Err:    fmt.Errorf("error writing parquet: %v", err),
-							}
-							break ETLLoopAgg
+							return
 						}
 					}
-					for err := range prqErrCh {
-						if err != nil {
-							infoCh <- &AssetETLInfo{
-								Path:   parquetPath,
-								Status: StatusError,
-								Err:    fmt.Errorf("error writing parquet: %v", err),
-							}
+				}()
+
+				// Ensure parquet writer finishes and closes file before reporting done
+				for err := range prqErrCh {
+					if err != nil {
+						infoCh <- &AssetETLInfo{
+							Path:   parquetPath,
+							Status: StatusError,
+							Err:    fmt.Errorf("error writing parquet: %v", err),
 						}
-					}
-					infoCh <- &AssetETLInfo{
-						Path:   parquetPath,
-						Status: StatusParquetDone,
-						Info:   fmt.Sprintf("Wrote %d parquetAggTrades to parquet", wroteTrades),
 					}
 				}
-			}
-		}
 
+				infoCh <- &AssetETLInfo{
+					Path:   parquetPath,
+					Status: StatusParquetDone,
+					Info:   fmt.Sprintf("Wrote %d parquetKlines to parquet", wroteKlines),
+				}
+			}
+
+		}
 	}()
 	return
 }
