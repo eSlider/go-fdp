@@ -96,9 +96,9 @@ func (s *Server) setupRoutes() {
 	s.router.HandleFunc("/v1/sql", s.handleSQL).Methods("POST")
 }
 
-// DataQuery represents query parameters for /v1/data with validation rules
+// AssetRequest represents query parameters for /v1/data with validation rules
 // All time values are milliseconds since epoch.
-type DataQuery struct {
+type AssetRequest struct {
 	From       int64  `validate:"required"`              // Millisecond timestamp
 	To         int64  `validate:"required,gtfield=From"` // Millisecond timestamp
 	Market     string `validate:"required"`
@@ -109,20 +109,20 @@ type DataQuery struct {
 }
 
 // UnmarshalJSON implements the json.Unmarshaler interface
-func (dq *DataQuery) UnmarshalJSON(b []byte) error {
-	type Alias DataQuery
+func (dq *AssetRequest) UnmarshalJSON(b []byte) error {
+	type Alias AssetRequest
 	var a Alias
 	if err := json.Unmarshal(b, &a); err != nil {
 		return err
 	}
-	*dq = DataQuery(a)
+	*dq = AssetRequest(a)
 	return nil
 }
 
-func (dq *DataQuery) FromTime() *time.Time {
+func (dq *AssetRequest) FromTime() *time.Time {
 	return data.AnyTimestampToTime(dq.From)
 }
-func (dq *DataQuery) ToTime() *time.Time {
+func (dq *AssetRequest) ToTime() *time.Time {
 	return data.AnyTimestampToTime(dq.To)
 }
 
@@ -139,7 +139,7 @@ type ErrorsResponse struct {
 
 // handleData handles the /v1/data endpoint for candle data
 func (s *Server) handleData(w http.ResponseWriter, r *http.Request) {
-	q := &DataQuery{
+	q := &AssetRequest{
 		Exchange:   "binance",
 		MarketType: "spot",
 		Frame:      "1m",
@@ -148,6 +148,8 @@ func (s *Server) handleData(w http.ResponseWriter, r *http.Request) {
 
 	if err := s.Validate(q, w, r); err != nil {
 		log.Fatalf("Validation error: %v", err)
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(err.Error()))
 		return
 	}
 
