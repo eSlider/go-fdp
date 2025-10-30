@@ -105,6 +105,17 @@ type DataQuery struct {
 	Frame      string `validate:"omitempty,oneof=1m 3m 5m 15m 30m 1h 2h 4h 6h 8h 12h 1d 3d 1w 1M"`
 }
 
+// UnmarshalJSON implements the json.Unmarshaler interface
+func (dq *DataQuery) UnmarshalJSON(b []byte) error {
+	type Alias DataQuery
+	var a Alias
+	if err := json.Unmarshal(b, &a); err != nil {
+		return err
+	}
+	*dq = DataQuery(a)
+	return nil
+}
+
 func (dq *DataQuery) FromTime() *time.Time {
 	return data.AnyTimestampToTime(dq.From)
 }
@@ -113,9 +124,10 @@ func (dq *DataQuery) ToTime() *time.Time {
 }
 
 type FieldError struct {
-	Field string `json:"field"`
-	Tag   string `json:"tag"`
-	Param string `json:"param"`
+	Field   string `json:"field"`
+	Tag     string `json:"tag"`
+	Param   string `json:"param"`
+	Message string `json:"message"`
 }
 type ErrorsResponse struct {
 	Message string       `json:"message"`
@@ -130,9 +142,8 @@ func (s *Server) handleData(w http.ResponseWriter, r *http.Request) {
 		MarketType: "spot",
 		Frame:      "1m",
 	}
-	mapstructure.WeakDecode(r.URL.Query(), dq)
 
-	if err := s.Validate(&dq, w); err != nil {
+	if err := s.Validate(dq, w, r); err != nil {
 		log.Fatalf("Validation error: %v", err)
 		return
 	}
@@ -357,16 +368,40 @@ func (s *Server) Close() error {
 }
 
 // Validate and respond with validation errors
-func (s *Server) Validate(dq any, w http.ResponseWriter) error {
+func (s *Server) Validate(dq any, w http.ResponseWriter, r *http.Request) error {
+	values := r.URL.Query()
+
+	// Collect all values
+	m := make(map[string]any)
+	for k, v := range values {
+		if len(v) > 0 {
+			m[k] = v[0]
+		}
+	}
+
+	// Decode query parameters
+	if err := mapstructure.WeakDecode(m, dq); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(err.Error()))
+		return err
+	}
+
+	// Validate
 	if err := s.validate.Struct(dq); err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
 
+		// Return validation errors
 		resp := ErrorsResponse{Message: "Validation failed"}
 		var ve validator.ValidationErrors
 		if errors.As(err, &ve) {
 			for _, e := range ve {
-				resp.Errors = append(resp.Errors, FieldError{Field: e.Field(), Tag: e.Tag(), Param: e.Param()})
+				resp.Errors = append(resp.Errors, FieldError{
+					Field:   e.Field(),
+					Tag:     e.Tag(),
+					Param:   e.Param(),
+					Message: e.Error(),
+				})
 			}
 		}
 		_ = json.NewEncoder(w).Encode(resp)
