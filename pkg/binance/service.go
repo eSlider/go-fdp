@@ -77,7 +77,7 @@ func (s *HistoryConsumer) List(path string) (ch chan ListResult) {
 			Bucket:  aws.String(s.bucket),
 			MaxKeys: aws.Int32(100), // By default, 1000, but we need to iterate over all pages using callbacks
 			Prefix:  aws.String(path),
-			//StartAfter:               nil, // Optional, start after a key
+			// StartAfter:               nil, // Optional, start after a key
 		})
 
 		// Iterate over pages
@@ -184,10 +184,10 @@ func (s *HistoryConsumer) DownloadAndTransform(
 							}
 							parquetKlineCh <- NewParquetKline(csvKline)
 							wroteKlines++
-							//infoCh <- &AssetETLInfo{
+							// infoCh <- &AssetETLInfo{
 							//	Path:   parquetPath,
 							//	Status: StatusTransforming,
-							//}
+							// }
 						case err, ok := <-csvErrCh:
 							if !ok {
 								close(parquetKlineCh)
@@ -215,15 +215,15 @@ func (s *HistoryConsumer) DownloadAndTransform(
 					}
 
 					// Ensure parquet writer finishes and closes file before reporting done
-					for err := range prqErrCh {
-						if err != nil {
-							infoCh <- &AssetETLInfo{
-								Path:   parquetPath,
-								Status: StatusError,
-								Err:    fmt.Errorf("error writing parquet: %v", err),
-							}
-						}
-					}
+					// for err := range prqErrCh {
+					// 	if err != nil {
+					// 		infoCh <- &AssetETLInfo{
+					// 			Path:   parquetPath,
+					// 			Status: StatusError,
+					// 			Err:    fmt.Errorf("error writing parquet: %v", err),
+					// 		}
+					// 	}
+					// }
 
 					infoCh <- &AssetETLInfo{
 						Path:   parquetPath,
@@ -298,9 +298,9 @@ func (s *HistoryConsumer) Download(path string, w io.WriterAt) (n int64, err err
 	download, err := s.downloader.Download(s.ctx, w, &s3.GetObjectInput{
 		Bucket: aws.String(s.bucket),
 		Key:    aws.String(path),
-		//IfModifiedSince:            nil,
-		//IfUnmodifiedSince:          nil,
-		//VersionId:                  nil,
+		// IfModifiedSince:            nil,
+		// IfUnmodifiedSince:          nil,
+		// VersionId:                  nil,
 	})
 	return download, err
 }
@@ -411,7 +411,7 @@ func (s *HistoryConsumer) GetAsset(asset *HistoryAsset) (info chan *AssetETLInfo
 					}
 				}
 			}
-			//fmt.Printf("Found %d files\n", len(pths))
+			// fmt.Printf("Found %d files\n", len(pths))
 		}
 		close(info)
 	}()

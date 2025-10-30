@@ -64,6 +64,8 @@ func WriteParquet[T any](
 				return
 			}
 		}
+
+		fmt.Println("Finished writing parquet file")
 	}()
 	return
 }
