@@ -3,14 +3,18 @@ package api
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"strconv"
+	"sync-v3/pkg/binance"
+	"sync-v3/pkg/data"
 	"time"
 
 	_ "github.com/duckdb/duckdb-go/v2"
 	"github.com/go-playground/validator/v10"
+	"github.com/go-viper/mapstructure/v2"
 	"github.com/gorilla/mux"
 )
 
@@ -94,86 +98,118 @@ func (s *Server) setupRoutes() {
 // DataQuery represents query parameters for /v1/data with validation rules
 // All time values are milliseconds since epoch.
 type DataQuery struct {
-	From       int64  `validate:"required"`
-	To         int64  `validate:"required,gtfield=From"`
+	From       int64  `validate:"required"`              // Millisecond timestamp
+	To         int64  `validate:"required,gtfield=From"` // Millisecond timestamp
 	Market     string `validate:"required"`
 	Exchange   string `validate:"omitempty,oneof=binance"`
 	MarketType string `validate:"omitempty,oneof=spot futures"`
 	Frame      string `validate:"omitempty,oneof=1m 3m 5m 15m 30m 1h 2h 4h 6h 8h 12h 1d 3d 1w 1M"`
 }
 
+func (dq *DataQuery) FromTime() *time.Time {
+	return data.AnyTimestampToTime(dq.From)
+}
+func (dq *DataQuery) ToTime() *time.Time {
+	return data.AnyTimestampToTime(dq.To)
+}
+
+type FieldError struct {
+	Field string `json:"field"`
+	Tag   string `json:"tag"`
+	Param string `json:"param"`
+}
+type ErrorsResponse struct {
+	Message string       `json:"message"`
+	Errors  []FieldError `json:"errors"`
+}
+
 // handleData handles the /v1/data endpoint for candle data
 func (s *Server) handleData(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
 
-	// Fetch all query parameters at once
-	fromStr := q.Get("from")
-	toStr := q.Get("to")
-	market := q.Get("market")
-	exchange := q.Get("exchange")
-	marketType := q.Get("marketType")
-	frame := q.Get("frame")
+	dq := &DataQuery{
+		Exchange:   "binance",
+		MarketType: "spot",
+		Frame:      "1m",
+	}
+	mapstructure.WeakDecode(r.URL.Query(), dq)
+
+	if err := s.Validate(&dq, w); err != nil {
+		log.Fatalf("Validation error: %v", err)
+		return
+	}
 
 	// Basic presence checks for required numeric fields
-	if fromStr == "" || toStr == "" || market == "" {
+	if dq.Market == "" {
 		http.Error(w, "Missing required parameters: from, to, market", http.StatusBadRequest)
 		return
 	}
 
-	from, err := strconv.ParseInt(fromStr, 10, 64)
+	context := r.Context()
+	srv, err := binance.NewHistoryConsumer(context)
 	if err != nil {
-		http.Error(w, "Invalid 'from' timestamp", http.StatusBadRequest)
-		return
-	}
-	to, err := strconv.ParseInt(toStr, 10, 64)
-	if err != nil {
-		http.Error(w, "Invalid 'to' timestamp", http.StatusBadRequest)
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(err.Error()))
 		return
 	}
 
-	// Apply defaults
-	if exchange == "" {
-		exchange = "binance"
-	}
-	if marketType == "" {
-		marketType = "spot"
-	}
+	// Loop from start to end by every year and month
+
+	// Map frame and market type from query
+	frame := binance.Frame(dq.Frame)
 	if frame == "" {
-		frame = "1m"
+		frame = binance.OneMinute
+	}
+	var mtype binance.MarketType
+	switch dq.MarketType {
+	case "", string(binance.Spot):
+		mtype = binance.Spot
+	case string(binance.Futures):
+		mtype = binance.Futures
+	default:
+		mtype = binance.Spot
 	}
 
-	// Build DTO and validate
-	dq := DataQuery{
-		From:       from,
-		To:         to,
-		Market:     market,
-		Exchange:   exchange,
-		MarketType: marketType,
-		Frame:      frame,
-	}
+	fromTime := dq.FromTime()
+	toTime := dq.ToTime()
+	start := time.Date(fromTime.Year(), fromTime.Month(), 1, 0, 0, 0, 0, time.UTC)
+	end := time.Date(toTime.Year(), toTime.Month(), 1, 0, 0, 0, 0, time.UTC)
 
-	if err := s.validate.Struct(dq); err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		// Translate validation errors to a simple list
-		type verr struct {
-			Field string `json:"field"`
-			Tag   string `json:"tag"`
-			Param string `json:"param"`
+	// Collect results
+	var infos []*binance.AssetETLInfo
+	var errs []error
+
+	for cur := start; !cur.After(end); cur = cur.AddDate(0, 1, 0) {
+		asset := &binance.HistoryAsset{
+			MarketType: mtype,
+			Frequency:  binance.Monthly,
+			Frame:      frame,
+			Indicator:  binance.Klines,
+			Date:       cur,
+			Market:     dq.Market,
 		}
-		resp := struct {
-			Message string `json:"message"`
-			Errors  []verr `json:"errors"`
-		}{Message: "Validation failed"}
-		if ve, ok := err.(validator.ValidationErrors); ok {
-			for _, e := range ve {
-				resp.Errors = append(resp.Errors, verr{Field: e.Field(), Tag: e.Tag(), Param: e.Param()})
+
+		// Download and transform (this should create or reuse parquet file)
+		infoCh, errCh := srv.DownloadAndTransform(asset)
+
+		// Drain channels for this month
+		doneInfo := false
+		doneErr := false
+		for !(doneInfo && doneErr) {
+			select {
+			case info, ok := <-infoCh:
+				if ok {
+					infos = append(infos, info)
+				} else {
+					doneInfo = true
+				}
+			case err, ok := <-errCh:
+				if ok {
+					errs = append(errs, err)
+				} else {
+					doneErr = true
+				}
 			}
-		} else {
-			resp.Errors = append(resp.Errors, verr{Field: "", Tag: "error", Param: err.Error()})
 		}
-		_ = json.NewEncoder(w).Encode(resp)
-		return
 	}
 
 	// Query klines data
@@ -317,4 +353,25 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // Close closes the database connection
 func (s *Server) Close() error {
 	return s.db.Close()
+}
+
+// Validate and respond with validation errors
+func (s *Server) Validate(dq any, w http.ResponseWriter) error {
+	if err := s.validate.Struct(dq); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+
+		resp := ErrorsResponse{Message: "Validation failed"}
+		var ve validator.ValidationErrors
+		if errors.As(err, &ve) {
+			for _, e := range ve {
+				resp.Errors = append(resp.Errors, FieldError{Field: e.Field(), Tag: e.Tag(), Param: e.Param()})
+			}
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }

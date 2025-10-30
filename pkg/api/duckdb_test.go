@@ -11,7 +11,31 @@ import (
 	_ "github.com/duckdb/duckdb-go/v2"
 )
 
-// TestDuckDBParquetReading tests reading parquet files using DuckDB
+// func TestAssetLazyLoader(t *testing.T) {
+// 	fromTime := time.Now().Add(-4 * time.Hour)
+// 	toTime := time.Now()
+//
+// 	asset := &binance.HistoryAsset{
+// 		MarketType: marketType,
+// 		Frequency:  Frequency(freq),
+// 		Indicator:  indicator,
+// 		Date:       time.Date(2021, 1, 1, 0, 0, 0, 0, time.UTC),
+// 		Frame:      Frame(frame),
+// 		Market:     market,
+// 	}
+//
+// 	zipLink := asset.SymbolDateAssetZipLink()
+// 	reverseAsset, err := NewHistoryAssetByPath(zipLink)
+// 	if err != nil {
+// 		t.Errorf("could not parse path: %s", err.Error())
+// 	}
+// 	link := reverseAsset.SymbolDateAssetZipLink()
+// 	if link != zipLink {
+// 		t.Errorf("unexpected asset: %v", zipLink)
+// 	}
+//
+// }
+
 func TestDuckDBParquetReading(t *testing.T) {
 	t.Run("reads klines parquet file directly", func(t *testing.T) {
 		// Open DuckDB connection (same as handler)
