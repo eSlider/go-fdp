@@ -263,8 +263,8 @@ type Kline struct {
 }
 
 type ParquetKline struct {
-	OpenTime  int32   `parquet:"name=open_time,type=INT32, logicaltype=TIME, logicaltype.isadjustedtoutc=true, logicaltype.unit=MILLIS"`
-	CloseTime int32   `parquet:"name=close_time,type=INT32, logicaltype=TIME, logicaltype.isadjustedtoutc=true, logicaltype.unit=MILLIS"`
+	OpenTime  int64   `parquet:"name=open_time,type=INT64, logicaltype=TIMESTAMP, logicaltype.isadjustedtoutc=false,logicaltype.unit=MICROS"`
+	CloseTime int64   `parquet:"name=close_time,type=INT64, logicaltype=TIMESTAMP, logicaltype.isadjustedtoutc=false,logicaltype.unit=MICROS"`
 	Open      float64 `parquet:"name=open_price, type=DOUBLE"`
 	High      float64 `parquet:"name=high_price, type=DOUBLE"`
 	Low       float64 `parquet:"name=low_price, type=DOUBLE"`
@@ -301,7 +301,7 @@ type AggTrade struct {
 }
 
 type ParquetAggTrade struct {
-	Timestamp    int32   `parquet:"name=ts,type=INT32, logicaltype=TIME, logicaltype.isadjustedtoutc=true, logicaltype.unit=MILLIS"`
+	Timestamp    int64   `parquet:"name=ts,type=INT64, logicaltype=TIMESTAMP, logicaltype.isadjustedtoutc=false, logicaltype.unit=MICROS"`
 	AggTradeID   int64   `parquet:"name=agg_trade_id,type=INT64,convertedtype=UINT_64"`
 	FirstTradeID int64   `parquet:"name=first_trade_id,type=INT64,convertedtype=UINT_64"`
 	LastTradeID  int64   `parquet:"name=last_trade_id,type=INT64,convertedtype=UINT_64"`
@@ -320,7 +320,7 @@ func (a *AggTrade) Parquet() (*ParquetAggTrade, error) {
 
 	// Check if the timestamp is milliseconds or microseconds
 	return &ParquetAggTrade{
-		Timestamp:    ToMs(a.Timestamp),
+		Timestamp:    ToMicroseconds(a.Timestamp),
 		AggTradeID:   a.AggTradeID,
 		Price:        a.Price,
 		Quantity:     a.Quantity,
@@ -341,8 +341,8 @@ func (k *Kline) Parquet() (*ParquetKline, error) {
 	}
 
 	return &ParquetKline{
-		OpenTime:  ToMs(k.OpenTime),
-		CloseTime: ToMs(k.CloseTime),
+		OpenTime:  ToMicroseconds(k.OpenTime),
+		CloseTime: ToMicroseconds(k.CloseTime),
 		Open:      k.OpenPrice,
 		High:      k.HighPrice,
 		Low:       k.LowPrice,
@@ -351,17 +351,16 @@ func (k *Kline) Parquet() (*ParquetKline, error) {
 	}, nil
 }
 
-func ToMs(ts int64) (v int32) {
-	tp := TypeOfTimestamp(ts)
-	switch tp {
+func ToMicroseconds(ts int64) int64 {
+	switch TypeOfTimestamp(ts) {
 	case TimestampInMicros:
-		v = int32(ts / 1000)
+		return ts
 	case TimestampInSeconds:
-		v = int32(ts * 1000)
+		return ts * 1000 * 1000
 	case TimestampInMillis:
-		v = int32(ts)
+		return ts * 1000
 	}
-	return v
+	return 0
 }
 
 type TimestampType int
