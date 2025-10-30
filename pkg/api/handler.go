@@ -48,7 +48,7 @@ func NewServer() (*Server, error) {
 // setupTables creates DuckDB tables that point to parquet files
 func setupTables(db *sql.DB) error {
 	// First test if we can read parquet directly
-	testSQL := `SELECT COUNT(*) FROM read_parquet('data/spot/monthly/klines/ETHUSDT/1m/ETHUSDT-1m-2017-08.parquet')`
+	testSQL := `SELECT COUNT(*) FROM read_parquet('data/spot/monthly/klines/ETHUSDT/1m/ETHUSDT-1m-2020-08.parquet')`
 	var count int
 	if err := db.QueryRow(testSQL).Scan(&count); err != nil {
 		log.Printf("Warning: cannot read klines parquet: %v", err)
