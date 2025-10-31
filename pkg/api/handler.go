@@ -93,6 +93,8 @@ func setupTables(db *sql.DB) error {
 // setupRoutes configures the API routes
 func (s *Server) setupRoutes() {
 	s.router.HandleFunc("/v1/data", s.handleData).Methods("GET")
+	s.router.HandleFunc("/v1/symbols", s.handleData).Methods("GET")
+	s.router.HandleFunc("/v1/markets", s.GetMarkets).Methods("GET")
 	s.router.HandleFunc("/v1/sql", s.handleSQL).Methods("POST")
 }
 
@@ -132,47 +134,46 @@ type FieldError struct {
 	Tag     string `json:"tag,omitempty"`
 	Param   string `json:"param,omitempty"`
 	Message string `json:"message,omitempty"`
-	Error   error  `json:"error,omitempty"`
-}
-type FieldErrorResponse struct {
-	Message string       `json:"message"`
-	Errors  []FieldError `json:"errors"`
+	Err     error  `json:"error,omitempty"`
 }
 
-type ErrorResponse struct {
-	Message string `json:"message"`
+func (f FieldError) Error() string {
+	return fmt.Sprintf("%s: %s: %v", f.Field, f.Message, f.Err)
+}
+
+type Error struct {
+	Message string  `json:"message"`
+	Errors  []error `json:"errors"`
+}
+
+func (f Error) Error() string {
+	return fmt.Sprintf("%s: %v", f.Message, errors.Join(f.Errors...))
 }
 
 // handleData handles the /v1/data endpoint for candle data
 func (s *Server) handleData(w http.ResponseWriter, r *http.Request) {
 	q := &AssetRequest{
 		Exchange:   "binance",
-		MarketType: "spot",
-		Frame:      "1m",
-		Indicator:  "klines",
+		MarketType: string(binance.Spot),
+		Frame:      binance.OneMinute,
+		Indicator:  string(binance.Klines),
 	}
 
 	if err := s.Validate(q, w, r); err != nil {
-		http.Error(w, "Validation failed", http.StatusBadRequest)
+		s.WriteError(w, err, http.StatusBadRequest)
 		return
 	}
 
 	// Basic presence checks for required numeric fields
 	if q.Market == "" {
-		s.WriteError(w, FieldErrorResponse{
-			"Missing required field",
-			[]FieldError{{
-				Field: "market",
-			}}},
-			http.StatusBadRequest)
+		s.WriteError(w, Error{"Missing required field", []error{FieldError{Field: "market"}}}, http.StatusBadRequest)
 		return
 	}
 
 	context := r.Context()
 	srv, err := binance.NewHistoryConsumer(context)
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte(err.Error()))
+		s.WriteError(w, err)
 		return
 	}
 
@@ -237,6 +238,13 @@ func (s *Server) handleData(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	if len(errs) > 0 {
+		s.WriteError(w, Error{
+			Message: "Failed to download and transform data",
+			Errors:  errs,
+		})
+		return
+	}
 
 	// Query klines data
 	result, err := s.DbQuery(`SELECT
@@ -262,10 +270,7 @@ func (s *Server) handleData(w http.ResponseWriter, r *http.Request) {
 	})
 
 	if err != nil {
-		s.WriteError(w, FieldErrorResponse{
-			"Database query failed",
-			[]FieldError{{Error: err}}},
-			http.StatusInternalServerError)
+		s.WriteError(w, err)
 		return
 	}
 
@@ -279,23 +284,25 @@ func (s *Server) handleSQL(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		log.Printf("JSON decode error: %v", err)
-		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		s.WriteError(w,
+			fmt.Errorf("failed to decode request body: %w", err),
+			http.StatusBadRequest)
 		return
 	}
 
 	log.Printf("Received SQL query: %s", req.Query)
-
 	if req.Query == "" {
-		http.Error(w, "Query is required", http.StatusBadRequest)
+		s.WriteError(w, errors.New("query is empty"), http.StatusBadRequest)
+
 		return
 	}
 
 	// Execute the query
 	rows, err := s.db.Query(req.Query)
 	if err != nil {
-		log.Printf("SQL query error: %v", err)
-		http.Error(w, "Query execution failed", http.StatusBadRequest)
+		s.WriteError(w,
+			fmt.Errorf("failed to execute query: %w", err),
+			http.StatusBadRequest)
 		return
 	}
 	defer rows.Close()
@@ -303,8 +310,9 @@ func (s *Server) handleSQL(w http.ResponseWriter, r *http.Request) {
 	// Get column names
 	columns, err := rows.Columns()
 	if err != nil {
-		log.Printf("Columns error: %v", err)
-		http.Error(w, "Failed to get columns", http.StatusInternalServerError)
+		s.WriteError(w,
+			fmt.Errorf("failed to get columns: %w", err),
+			http.StatusInternalServerError)
 		return
 	}
 
@@ -319,7 +327,7 @@ func (s *Server) handleSQL(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if err := rows.Scan(valuePtrs...); err != nil {
-			log.Printf("Scan error: %v", err)
+			s.WriteError(w, fmt.Errorf("failed to scan row: %w", err), http.StatusInternalServerError)
 			continue
 		}
 
@@ -338,8 +346,7 @@ func (s *Server) handleSQL(w http.ResponseWriter, r *http.Request) {
 		results = append(results, row)
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(results)
+	s.WriteJson(w, results)
 }
 
 // ServeHTTP implements the http.Handler interface
@@ -366,18 +373,13 @@ func (s *Server) Validate(dq any, w http.ResponseWriter, r *http.Request) error 
 
 	// Decode query parameters
 	if err := mapstructure.WeakDecode(m, dq); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte(err.Error()))
 		return err
 	}
 
 	// Validate
 	if err := s.validate.Struct(dq); err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-
 		// Return validation errors
-		resp := FieldErrorResponse{Message: "Validation failed"}
+		resp := Error{Message: "Validation failed"}
 		var ve validator.ValidationErrors
 		if errors.As(err, &ve) {
 			for _, e := range ve {
@@ -390,11 +392,9 @@ func (s *Server) Validate(dq any, w http.ResponseWriter, r *http.Request) error 
 				})
 			}
 		}
-		_ = json.NewEncoder(w).Encode(resp)
-		if err != nil {
-			return err
-		}
+		return err
 	}
+
 	return nil
 }
 
@@ -459,16 +459,54 @@ func (s *Server) DbQuery(
 	return result, nil
 }
 
-func (s *Server) WriteError(w http.ResponseWriter, err FieldErrorResponse, code int) {
-	// Write header
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(err)
+// WriteError writes an error response to the client
+func (s *Server) WriteError(w http.ResponseWriter, err error, codeOption ...int) {
+	code := http.StatusInternalServerError
+	if len(codeOption) > 0 {
+		code = codeOption[0]
+	}
+
 	w.WriteHeader(code)
+
+	var res *Error
+	switch err.(type) {
+	case *FieldError:
+		res = &Error{
+			Message: "Field error",
+			Errors:  []error{err},
+		}
+	case *Error:
+		errors.As(err, &res)
+	default:
+		res = &Error{
+			Message: err.Error(),
+			Errors:  []error{err},
+		}
+	}
+	s.WriteJson(w, res)
 }
 
-func (s *Server) WriteJson(w http.ResponseWriter, result []any) {
+func (s *Server) WriteJson(w http.ResponseWriter, result any) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(result)
+}
+
+// GetMarkets returns a list of markets for the given exchange
+func (s *Server) GetMarkets(w http.ResponseWriter, r *http.Request) {
+	registry, err := binance.NewExchangeRegistry()
+	if err != nil {
+		s.WriteError(w, err)
+	}
+	s.WriteJson(w, registry.Markets)
+}
+
+// GetSymbols returns a list of symbols for the given exchange
+func (s *Server) GetSymbols(w http.ResponseWriter, r *http.Request) {
+	registry, err := binance.NewExchangeRegistry()
+	if err != nil {
+		s.WriteError(w, err)
+	}
+	s.WriteJson(w, registry.Symbols)
 }
 
 type ResponseDate time.Time

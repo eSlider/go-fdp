@@ -114,9 +114,13 @@ type Indicator string
 
 const (
 	Klines    Indicator = "klines"
-	Trades              = "trades"
-	AggTrades           = "aggTrades"
+	Trades    Indicator = "trades"
+	AggTrades Indicator = "aggTrades"
 )
+
+func (i Indicator) String() string {
+	return string(i)
+}
 
 type HistoryAsset struct {
 	MarketType
@@ -124,8 +128,7 @@ type HistoryAsset struct {
 	Frame
 	Indicator
 	Market string
-
-	Date time.Time
+	Date   time.Time
 }
 
 func (q HistoryAsset) String() string {
