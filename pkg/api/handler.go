@@ -93,7 +93,7 @@ func setupTables(db *sql.DB) error {
 // setupRoutes configures the API routes
 func (s *Server) setupRoutes() {
 	s.router.HandleFunc("/v1/data", s.handleData).Methods("GET")
-	s.router.HandleFunc("/v1/symbols", s.handleData).Methods("GET")
+	s.router.HandleFunc("/v1/symbols", s.GetSymbols).Methods("GET")
 	s.router.HandleFunc("/v1/markets", s.GetMarkets).Methods("GET")
 	s.router.HandleFunc("/v1/sql", s.handleSQL).Methods("POST")
 }
