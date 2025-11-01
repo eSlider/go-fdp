@@ -285,52 +285,10 @@ func (s *Server) handleSQL(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Execute the query
-	rows, err := s.db.Query(req.Query)
+	results, err := s.DbQueryMap(req.Query)
 	if err != nil {
-		s.WriteError(w,
-			fmt.Errorf("failed to execute query: %w", err),
-			http.StatusBadRequest)
+		s.WriteError(w, err)
 		return
-	}
-	defer rows.Close()
-
-	// Get column names
-	columns, err := rows.Columns()
-	if err != nil {
-		s.WriteError(w,
-			fmt.Errorf("failed to get columns: %w", err),
-			http.StatusInternalServerError)
-		return
-	}
-
-	// Convert to JSON array
-	var results []map[string]interface{}
-	for rows.Next() {
-		// Create a slice of interface{} to hold the values
-		values := make([]interface{}, len(columns))
-		valuePtrs := make([]interface{}, len(columns))
-		for i := range values {
-			valuePtrs[i] = &values[i]
-		}
-
-		if err := rows.Scan(valuePtrs...); err != nil {
-			s.WriteError(w, fmt.Errorf("failed to scan row: %w", err), http.StatusInternalServerError)
-			continue
-		}
-
-		row := make(map[string]interface{})
-		for i, col := range columns {
-			// Handle different types
-			switch v := values[i].(type) {
-			case []byte:
-				row[col] = string(v)
-			case time.Time:
-				row[col] = v.UnixMilli()
-			default:
-				row[col] = v
-			}
-		}
-		results = append(results, row)
 	}
 
 	s.WriteJson(w, results)
@@ -528,6 +486,52 @@ func (s *Server) CandlesFromParquet(q CandleParquetQuery) (result []any, err err
 	`, q)
 }
 
+func (s *Server) DbQueryMap(q string) (any, error) {
+	rows, err := s.db.Query(q)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute query: %w", err)
+	}
+	defer rows.Close()
+
+	// Get column names
+	columns, err := rows.Columns()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get columns: %w", err)
+	}
+
+	// Convert to JSON array
+	var results []map[string]any
+	for rows.Next() {
+		// Create a slice of interface{} to hold the values
+		values := make([]any, len(columns))
+		valuePtrs := make([]any, len(columns))
+		for i := range values {
+			valuePtrs[i] = &values[i]
+		}
+
+		if err := rows.Scan(valuePtrs...); err != nil {
+			return nil, fmt.Errorf("failed to scan row: %w", err)
+		}
+
+		row := make(map[string]any, len(columns))
+		for i, col := range columns {
+			// Handle different types
+			switch v := values[i].(type) {
+			case []byte:
+				row[col] = string(v)
+			case time.Time:
+				row[col] = v.UnixMilli()
+			case *time.Time:
+				row[col] = v.UnixMilli()
+			default:
+				row[col] = v
+			}
+		}
+		results = append(results, row)
+	}
+	return results, nil
+}
+
 type ResponseDate time.Time
 
 // MarshalJSON implements the json.Marshaler interface
@@ -536,11 +540,11 @@ func (r ResponseDate) MarshalJSON() ([]byte, error) {
 }
 
 type CandleResponse struct {
-	OpenTime  time.Time `json:"openTime"`
-	CloseTime time.Time `json:"closeTime"`
-	Open      float64   `json:"open"`
-	High      float64   `json:"high"`
-	Low       float64   `json:"low"`
-	Close     float64   `json:"close"`
-	Volume    float64   `json:"volume"`
+	OpenTime  ResponseDate `json:"openTime"`
+	CloseTime ResponseDate `json:"closeTime"`
+	Open      float64      `json:"open"`
+	High      float64      `json:"high"`
+	Low       float64      `json:"low"`
+	Close     float64      `json:"close"`
+	Volume    float64      `json:"volume"`
 }
