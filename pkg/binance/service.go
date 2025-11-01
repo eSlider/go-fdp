@@ -55,9 +55,9 @@ type HistoryConsumer struct {
 	localDir   string // Local directory for downloaded files
 
 	// Options
-	RecreateParquet bool // Recreate parquet files if they already exist
-	StoreZip        bool // Store zip files locally
-	StoreCSV        bool // Store CSV files locally
+	recreateParquet bool // Recreate parquet files if they already exist
+	storeZIP        bool // Store zip files locally
+	storeCSV        bool // Store CSV files locally
 }
 
 type ListResult struct {
@@ -133,7 +133,7 @@ func (s *HistoryConsumer) DownloadAndTransform(
 		link := asset.SymbolDateAssetZipLink()
 		parquetPath := asset.ParquetPath()
 
-		if s.RecreateParquet {
+		if s.recreateParquet {
 			os.Remove(parquetPath)
 		}
 
@@ -162,7 +162,7 @@ func (s *HistoryConsumer) DownloadAndTransform(
 					continue
 				}
 
-				if s.StoreCSV {
+				if s.storeCSV {
 					// Store CSV file parallel to ZIP
 					csvPath := strings.TrimSuffix(link, ".zip") + ".csv"
 					infoCh <- &AssetETLInfo{
@@ -217,12 +217,12 @@ func (s *HistoryConsumer) DownloadAndTransform(
 				}()
 
 				// Ensure parquet writer finishes and closes file before reporting done
-				for err := range prqErrCh {
-					if err != nil {
+				for prqErr := range prqErrCh {
+					if prqErr != nil {
 						infoCh <- &AssetETLInfo{
 							Path:   parquetPath,
 							Status: StatusError,
-							Err:    fmt.Errorf("error writing parquet: %v", err),
+							Err:    fmt.Errorf("error writing parquet: %v", prqErr),
 						}
 					}
 				}
@@ -288,7 +288,7 @@ func (s *HistoryConsumer) CacheZip(path string) (info chan *AssetETLInfo) {
 			}
 			info <- a
 
-			if s.StoreZip {
+			if s.storeZIP {
 				// Store zip file
 				info <- &AssetETLInfo{
 					Path:   path,
@@ -379,8 +379,8 @@ func NewHistoryConsumer(ctx context.Context) (*HistoryConsumer, error) {
 	client := s3.NewFromConfig(*cfg)
 	downloader := manager.NewDownloader(client)
 	return &HistoryConsumer{
-		RecreateParquet: false,
-		StoreZip:        false,
+		recreateParquet: false,
+		storeZIP:        false,
 		bucket:          "data.binance.vision",
 		client:          client,
 		downloader:      downloader,

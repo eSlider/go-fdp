@@ -65,6 +65,10 @@ const (
 	OneDay            = "1d"
 )
 
+func (f Frame) String() string {
+	return string(f)
+}
+
 type FutureType string
 
 func (f FutureType) String() string {

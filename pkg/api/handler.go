@@ -247,26 +247,13 @@ func (s *Server) handleData(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Query klines data
-	result, err := s.DbQuery(`SELECT
-	    *
-	FROM
-		read_parquet(
-			'data/%<mtype>s/daily/%<indicator>s/%<market>s/%<frame>s/*/*/*.parquet',
-			hive_partitioning = true
-		)
-	where
-		open_time > epoch_ms(%<from>d)::TIMESTAMP
-	AND
-		close_time <= epoch_ms(%<to>d)::TIMESTAMP
-	order by
-		close_time desc
-	`, map[string]any{
-		"market":    q.Market,
-		"frame":     frame,
-		"indicator": q.Indicator,
-		"mtype":     q.MarketType,
-		"from":      fromTime.UnixMilli(),
-		"to":        toTime.UnixMilli(),
+	result, err := s.CandlesFromParquet(CandleParquetQuery{
+		Market:     q.Market,
+		Frame:      string(frame),
+		Indicator:  q.Indicator,
+		MarketType: q.MarketType,
+		From:       fromTime.UnixMilli(),
+		To:         toTime.UnixMilli(),
 	})
 
 	if err != nil {
@@ -507,6 +494,38 @@ func (s *Server) GetSymbols(w http.ResponseWriter, r *http.Request) {
 		s.WriteError(w, err)
 	}
 	s.WriteJson(w, registry.Symbols)
+}
+
+type CandleParquetQuery struct {
+	Market     string `validate:"required"`
+	Frame      string `validate:"required"`
+	Indicator  string `validate:"required"`
+	MarketType string `validate:"required"`
+	From       int64  `validate:"required"`
+	To         int64  `validate:"required"`
+}
+
+func (s *Server) CandlesFromParquet(q CandleParquetQuery) (result []any, err error) {
+
+	// Validate query
+	if err := s.validate.Struct(q); err != nil {
+		return nil, err
+	}
+
+	return s.DbQuery(`SELECT
+	    *
+	FROM
+		read_parquet(
+			'data/%<mtype>s/daily/%<indicator>s/%<market>s/%<frame>s/*/*/*.parquet',
+			hive_partitioning = true
+		)
+	where
+		open_time > epoch_ms(%<from>d)::TIMESTAMP
+	AND
+		close_time <= epoch_ms(%<to>d)::TIMESTAMP
+	order by
+		close_time desc
+	`, q)
 }
 
 type ResponseDate time.Time
