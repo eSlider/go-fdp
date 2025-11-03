@@ -2,52 +2,70 @@ package api
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
+	"net/http"
 	"net/http/httptest"
 	"sync-v3/pkg/binance"
+	"sync-v3/pkg/data"
 	"testing"
 	"time"
 )
 
-func TestCandles(t *testing.T) {
+func QueryServer(t *testing.T, method, target string, body []byte) *httptest.ResponseRecorder {
 	// Create a test server
 	server, err := NewServer()
 	if err != nil {
-		t.Fatalf("Failed to create server: %v", err)
+		t.Errorf("failed to create server: %v", err)
 	}
 	defer server.Close()
 
-	// Create a test POST request without gzip support
-	req := httptest.NewRequest("POST", "/v1/sql", bytes.NewReader([]byte(`{"query": "SELECT 1 as test"}`)))
+	// Create a test POST request without gzip support "/v1/sql"
+	req := httptest.NewRequest(method, target, bytes.NewReader(body))
 
 	// Create a response recorder
 	w := httptest.NewRecorder()
 
 	// Call ServeHTTP
 	server.ServeHTTP(w, req)
+	return w
+}
 
-	exec, err := server.db.Exec("SELECT 1 as test")
+// TestCandles - test candles endpoint
+func TestMarkets(t *testing.T) {
+
+	w := QueryServer(t, "GET", "/v1/markets", nil)
+	r, err := data.JsonDecode[[]binance.Market](w.Body)
+
 	if err != nil {
-		t.Errorf("Failed to execute query: %v", err)
+		t.Errorf("Failed to decode response: %v", err)
 	}
 
-	count, err := exec.RowsAffected()
+	if r == nil {
+		t.Errorf("Response is nil")
+	}
+
+	for _, m := range *r {
+		if len(m.Symbols) < 2 {
+			t.Logf("Symbol count is less than 2: %s", m.Name)
+		}
+	}
+
+}
+
+// TestCandles - test candles endpoint
+func TestCandles(t *testing.T) {
+
+	w := QueryServer(t, http.MethodPost, "/v1/sql", []byte(`{"query": "SELECT 1 as test"}`))
+	result, err := data.JsonDecode[[]struct{ Test int }](w.Body)
 	if err != nil {
-		t.Errorf("Failed to get affected rows: %v", err)
+		t.Errorf("Failed to decode response: %v", err)
 	}
-	if count != 1 {
-		t.Errorf("Expected 1, got %d", count)
-	}
-
-	var result []struct{ Test int }
-
-	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
-		t.Errorf("Response data is not valid JSON: %v, body: %s", err, string(w.Body.Bytes()))
+	if result == nil {
+		t.Errorf("Response is nil")
 	}
 
-	if result[0].Test != 1 {
-		t.Errorf("Expected 1, got %d", result[0].Test)
+	if (*result)[0].Test != 1 {
+		t.Errorf("Expected 1, got %d", (*result)[0].Test)
 	}
 
 	// Create asset configuration for a small dataset (2017-08 ETHUSDT 1m klines)

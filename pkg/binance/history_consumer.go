@@ -67,6 +67,10 @@ type ListResult struct {
 	Err  error
 }
 
+// func (s *HistoryConsumer) QueryFromParquet() string {
+//
+// }
+
 // List objects by paths
 func (s *HistoryConsumer) List(path string) (ch chan ListResult) {
 	ch = make(chan ListResult)
