@@ -1,9 +1,11 @@
 package binance
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync-v3/pkg/data"
 	"time"
@@ -290,6 +292,37 @@ type Kline struct {
 	TakerBuyVolume float64 `csv:"9"`
 	TakerBuyQuote  float64 `csv:"10"`
 	Ignore         float64 `csv:"11"`
+}
+
+func strToFloat(s string) float64 {
+	f, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return 0
+	}
+	return f
+}
+func (k *Kline) UnmarshalJSON(data []byte) error {
+	// Intermediate slice for mixed types
+	var tmp []any
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+
+	// Assign by position (handle type assertions)
+	k.OpenTime = int64(tmp[0].(float64))
+	k.OpenPrice = strToFloat(tmp[1].(string))
+	k.HighPrice = strToFloat(tmp[2].(string))
+	k.LowPrice = strToFloat(tmp[3].(string))
+	k.ClosePrice = strToFloat(tmp[4].(string))
+	k.Volume = strToFloat(tmp[5].(string))
+	k.CloseTime = int64(tmp[6].(float64))
+	k.QuoteVolume = strToFloat(tmp[7].(string))
+	k.NumberOfTrades = int64(tmp[8].(float64))
+	k.TakerBuyVolume = strToFloat(tmp[9].(string))
+	k.TakerBuyQuote = strToFloat(tmp[10].(string))
+	k.Ignore = strToFloat(tmp[11].(string))
+
+	return nil
 }
 
 type ParquetKline struct {
