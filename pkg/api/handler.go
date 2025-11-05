@@ -128,26 +128,45 @@ func (dq *AssetRequest) ToTime() *time.Time {
 	return data.AnyTimestampToTime(dq.To)
 }
 
+func (dq *AssetRequest) MarshalJSON() ([]byte, error) {
+	// Marshaling JSON dosntr work with time.Time, so we need to convert to int64
+
+	var m = make(map[string]any)
+	m["from"] = dq.From
+	m["to"] = dq.To
+	m["market"] = dq.Market
+	m["exchange"] = dq.Exchange
+	m["marketType"] = dq.MarketType
+	m["frame"] = dq.Frame
+	m["indicator"] = dq.Indicator
+	marshal, err := json.Marshal(m)
+	return marshal, err
+}
+
 type FieldError struct {
 	Field   string `json:"field,omitempty"`
-	Value   any    `json:"value,omitempty"`
-	Tag     string `json:"tag,omitempty"`
-	Param   string `json:"param,omitempty"`
+	Value   any    `json:"-"`
+	Tag     string `json:"-"`
+	Param   string `json:"-"`
 	Message string `json:"message,omitempty"`
-	Err     error  `json:"error,omitempty"`
+	// Err     error  `json:"error,omitempty"`
 }
 
 func (f FieldError) Error() string {
-	return fmt.Sprintf("%s: %s: %v", f.Field, f.Message, f.Err)
+	return fmt.Sprintf("%s: %s", f.Field, f.Message)
 }
 
 type Error struct {
-	Message string  `json:"message"`
-	Errors  []error `json:"errors"`
+	Message string       `json:"message"`
+	Errors  []FieldError `json:"errors"`
 }
 
 func (f Error) Error() string {
-	return fmt.Sprintf("%s: %v", f.Message, errors.Join(f.Errors...))
+	var l []error
+	for _, e := range f.Errors {
+		l = append(l, e)
+	}
+	return fmt.Sprintf("%s: %v", f.Message, errors.Join(l...))
 }
 
 // handleData handles the /v1/data endpoint for candle data
@@ -159,14 +178,14 @@ func (s *Server) handleData(w http.ResponseWriter, r *http.Request) {
 		Indicator:  string(binance.Klines),
 	}
 
-	if err := s.Validate(q, w, r); err != nil {
+	if err := s.Validate(q, r); err != nil {
 		s.WriteError(w, err, http.StatusBadRequest)
 		return
 	}
 
 	// Basic presence checks for required numeric fields
 	if q.Market == "" {
-		s.WriteError(w, Error{"Missing required field", []error{FieldError{Field: "market"}}}, http.StatusBadRequest)
+		s.WriteError(w, Error{"Missing required field", []FieldError{{Field: "market"}}}, http.StatusBadRequest)
 		return
 	}
 
@@ -203,7 +222,7 @@ func (s *Server) handleData(w http.ResponseWriter, r *http.Request) {
 
 	// Collect results
 	var infos []*binance.AssetETLInfo
-	var errs []error
+	var errs []FieldError
 
 	for cur := start; !cur.After(end); cur = cur.AddDate(0, 0, 1) {
 		asset := &binance.HistoryAsset{
@@ -231,7 +250,9 @@ func (s *Server) handleData(w http.ResponseWriter, r *http.Request) {
 				}
 			case err, ok := <-errCh:
 				if ok {
-					errs = append(errs, err)
+					errs = append(errs, FieldError{
+						Message: err.Error(),
+					})
 				} else {
 					doneErr = true
 				}
@@ -305,7 +326,7 @@ func (s *Server) Close() error {
 }
 
 // Validate and respond with validation errors
-func (s *Server) Validate(dq any, w http.ResponseWriter, r *http.Request) error {
+func (s *Server) Validate(dq any, r *http.Request) error {
 	values := r.URL.Query()
 
 	// Collect all values
@@ -323,20 +344,6 @@ func (s *Server) Validate(dq any, w http.ResponseWriter, r *http.Request) error 
 
 	// Validate
 	if err := s.validate.Struct(dq); err != nil {
-		// Return validation errors
-		resp := Error{Message: "Validation failed"}
-		var ve validator.ValidationErrors
-		if errors.As(err, &ve) {
-			for _, e := range ve {
-				resp.Errors = append(resp.Errors, FieldError{
-					Field:   e.Field(),
-					Value:   e.Value(),
-					Tag:     e.Tag(),
-					Param:   e.Param(),
-					Message: e.Error(),
-				})
-			}
-		}
 		return err
 	}
 
@@ -414,18 +421,34 @@ func (s *Server) WriteError(w http.ResponseWriter, err error, codeOption ...int)
 	w.WriteHeader(code)
 
 	var res *Error
+
 	switch err.(type) {
+	case validator.ValidationErrors:
+		res = &Error{
+			Message: "Validation failed",
+		}
+		for _, e := range err.(validator.ValidationErrors) {
+			res.Errors = append(res.Errors, FieldError{
+				Field:   e.Field(),
+				Value:   e.Value(),
+				Tag:     e.Tag(),
+				Param:   e.Param(),
+				Message: e.Error(),
+			})
+		}
+
 	case *FieldError:
 		res = &Error{
 			Message: "Field error",
-			Errors:  []error{err},
+			Errors: []FieldError{
+				*err.(*FieldError),
+			},
 		}
 	case *Error:
 		errors.As(err, &res)
 	default:
 		res = &Error{
 			Message: err.Error(),
-			Errors:  []error{err},
 		}
 	}
 	s.WriteJson(w, res)

@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -84,6 +85,36 @@ func TestCandles(t *testing.T) {
 
 	// Trace time between start and end every day
 	for day := start; day.Before(end); day = day.AddDate(0, 0, 1) {
+		q, err := (&AssetRequest{
+			Exchange:   "binance",
+			MarketType: string(binance.Spot),
+			Frame:      binance.OneMinute,
+			Indicator:  string(binance.Klines),
+		}).MarshalJSON()
+
+		if err != nil {
+			t.Errorf("Failed to marshal query: %v", err)
+		}
+
+		// params :=
+
+		w := QueryServer(t, http.MethodGet, "/v1/data", q)
+		responseText := string(w.Body.Bytes())
+
+		var errResp Error
+		if err = json.Unmarshal([]byte(responseText), &errResp); err != nil {
+			t.Errorf("Failed to unmarshal error response: %v", err)
+		}
+		if errResp.Message != "" {
+			t.Errorf("Error response message is not empty: %v", errResp)
+		}
+
+		result, err := data.JsonDecode[[]struct{ Test int }](w.Body)
+		if err != nil {
+			t.Errorf("Failed to decode response: %v", err)
+		}
+		println(result)
+
 		fmt.Println(day)
 	}
 }

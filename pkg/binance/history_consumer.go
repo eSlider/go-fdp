@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync-v3/pkg/data"
 	"sync-v3/pkg/fs"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -149,6 +150,63 @@ func (s *HistoryConsumer) DownloadAndTransform(
 				Info:   fmt.Sprintf("Parquet file already exists: %s", parquetPath),
 			}
 			return
+		}
+
+		// Check start date, if it's before now until midnight, handle using other api
+		now := time.Now().UTC()
+		todayMidnight := time.Date(
+			now.Year(), now.Month(), now.Day(),
+			0, 0, 0, 0,
+			now.Location())
+		// .Add(-1 * time.Microsecond) // -1 microsecond
+
+		// Check if required asset.Date is before, then yesterday midnight 24:00
+		isToday := asset.Date.After(todayMidnight)
+
+		// If it's today, get candles from current api
+		if isToday {
+
+			// hoursCountBefore := asset.Date.Sub(todayMidnight).Hours()
+
+			// startTime is -1 Hour before
+			startTime := asset.Date.Add(-1 * time.Hour).UnixMicro()
+
+			// Start date is after today midnight, use other api
+			st := asset.Date.UnixMicro()
+			klines, err := getCurrentCandle(
+				&CandleRequestV3{
+					Symbol:    asset.Market,
+					Interval:  string(asset.Frame),
+					StartTime: &startTime,
+					EndTime:   &st,
+					TimeZone:  nil,
+					Limit:     1000,
+				},
+			)
+			if err != nil {
+				errCh <- fmt.Errorf("error getting current candle: %v", err)
+			}
+
+			parquetWriteCh, prqErrCh := data.WriteParquet[ParquetKline](parquetPath)
+			go func() {
+				for prqErr := range prqErrCh {
+					if prqErr != nil {
+						infoCh <- &AssetETLInfo{
+							Path:   parquetPath,
+							Status: StatusError,
+							Err:    fmt.Errorf("error writing parquet: %v", prqErr),
+						}
+					}
+				}
+			}()
+			for _, kline := range klines {
+				parquet, err2 := kline.Parquet()
+				if err2 != nil {
+					errCh <- fmt.Errorf("error converting csv entry to parquet: %v", err2)
+					return
+				}
+				parquetWriteCh <- parquet
+			}
 		}
 
 		// Download and cache zip file
