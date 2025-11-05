@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"sync-v3/pkg/binance"
@@ -79,8 +80,6 @@ func TestCandles(t *testing.T) {
 		t.Errorf("Expected 1, got %d", (*result)[0].Test)
 	}
 
-	now := time.Now()
-
 	// Create asset configuration for a small dataset (2017-08 ETHUSDT 1m klines)
 	// This date has existing data and we can verify the count
 	// asset := &binance.HistoryAsset{
@@ -91,38 +90,38 @@ func TestCandles(t *testing.T) {
 	// 	Date:       now,
 	// 	Market:     "ETHUSDT",
 	// }
-
-	start := now.AddDate(0, 0, -2)
-	end := now
+	now := time.Now()
+	end := now.AddDate(0, 0, -1)
 
 	// Trace time between start and end every day
-	for day := start; day.Before(end); day = day.AddDate(0, 0, 1) {
-		q, err := (&AssetRequest{
-			Exchange:   "binance",
-			MarketType: string(binance.Spot),
-			Frame:      binance.OneMinute,
-			Indicator:  string(binance.Klines),
-			Market:     "ETHUSDT",
-			From:       day.UnixMicro(),
-			To:         end.UnixMicro(),
-		}).MarshalJSON()
+	// for day := now.AddDate(0, 0, -2); day.Before(end) || day.Equal(end); day = day.AddDate(0, 0, 1) {
+	fmt.Println(end)
+	q, err := (&AssetRequest{
+		Exchange:   "binance",
+		MarketType: string(binance.Spot),
+		Frame:      binance.OneMinute,
+		Indicator:  string(binance.Klines),
+		Market:     "ETHUSDT",
+		From:       end.UnixMicro(),
+		To:         now.UnixMicro(),
+	}).MarshalJSON()
 
-		if err != nil {
-			t.Errorf("Failed to marshal query: %v", err)
-		}
-
-		// params :=
-
-		w := QueryServer(t, http.MethodGet, "/v1/data", q)
-		r, err := HandleServerResponse[[]binance.ParquetKline](w)
-
-		if err != nil {
-			t.Errorf("Failed to decode response: %v", err)
-		}
-
-		if r == nil {
-			t.Errorf("Response is nil")
-		}
-
+	if err != nil {
+		t.Errorf("Failed to marshal query: %v", err)
 	}
+
+	// params :=
+
+	w = QueryServer(t, http.MethodGet, "/v1/data", q)
+	r, err := HandleServerResponse[[]binance.ParquetKline](w)
+
+	if err != nil {
+		t.Errorf("Failed to decode response: %v", err)
+	}
+
+	if r == nil {
+		t.Errorf("Response is nil")
+	}
+
+	// }
 }
