@@ -29,6 +29,18 @@ func QueryServer(t *testing.T, method, target string, body []byte) *httptest.Res
 	return w
 }
 
+func HandleServerResponse[T any](w *httptest.ResponseRecorder) (r *T, err error) {
+	body := w.Body
+	if w.Code != http.StatusOK {
+		r, err := data.JsonDecode[Error](body)
+		if err != nil {
+			return nil, err
+		}
+		return nil, r
+	}
+	return data.JsonDecode[T](body)
+}
+
 // TestCandles - test candles endpoint
 func TestMarkets(t *testing.T) {
 
@@ -67,19 +79,21 @@ func TestCandles(t *testing.T) {
 		t.Errorf("Expected 1, got %d", (*result)[0].Test)
 	}
 
+	now := time.Now()
+
 	// Create asset configuration for a small dataset (2017-08 ETHUSDT 1m klines)
 	// This date has existing data and we can verify the count
-	asset := &binance.HistoryAsset{
-		MarketType: binance.Spot,
-		Frequency:  binance.Daily,
-		Frame:      binance.OneMinute,
-		Indicator:  binance.Klines,
-		Date:       time.Date(2020, 8, 2, 0, 0, 0, 0, time.UTC),
-		Market:     "ETHUSDT",
-	}
+	// asset := &binance.HistoryAsset{
+	// 	MarketType: binance.Spot,
+	// 	Frequency:  binance.Daily,
+	// 	Frame:      binance.OneMinute,
+	// 	Indicator:  binance.Klines,
+	// 	Date:       now,
+	// 	Market:     "ETHUSDT",
+	// }
 
-	start := asset.Date
-	end := asset.Date.Add(time.Hour * 24 * 2)
+	start := now.AddDate(0, 0, -2)
+	end := now
 
 	// Trace time between start and end every day
 	for day := start; day.Before(end); day = day.AddDate(0, 0, 1) {
@@ -111,16 +125,4 @@ func TestCandles(t *testing.T) {
 		}
 
 	}
-}
-
-func HandleServerResponse[T any](w *httptest.ResponseRecorder) (r *T, err error) {
-	body := w.Body
-	if w.Code != http.StatusOK {
-		r, err := data.JsonDecode[Error](body)
-		if err != nil {
-			return nil, err
-		}
-		return nil, r
-	}
-	return data.JsonDecode[T](body)
 }

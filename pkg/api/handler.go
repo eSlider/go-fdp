@@ -92,7 +92,7 @@ func setupTables(db *sql.DB) error {
 
 // setupRoutes configures the API routes
 func (s *Server) setupRoutes() {
-	s.router.HandleFunc("/v1/data", s.handleData).Methods("GET")
+	s.router.HandleFunc("/v1/data", s.GetMarketHistory).Methods("GET")
 	s.router.HandleFunc("/v1/symbols", s.GetSymbols).Methods("GET")
 	s.router.HandleFunc("/v1/markets", s.GetMarkets).Methods("GET")
 	s.router.HandleFunc("/v1/sql", s.handleSQL).Methods("POST")
@@ -177,8 +177,8 @@ func (f Error) Error() string {
 	return fmt.Sprintf("%s: %v", f.Message, errors.Join(l...))
 }
 
-// handleData handles the /v1/data endpoint for candle data
-func (s *Server) handleData(w http.ResponseWriter, r *http.Request) {
+// GetMarketHistory handles the /v1/data endpoint for candle data
+func (s *Server) GetMarketHistory(w http.ResponseWriter, r *http.Request) {
 	q := &AssetRequest{
 		Exchange:   "binance",
 		MarketType: string(binance.Spot),
@@ -191,14 +191,7 @@ func (s *Server) handleData(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Basic presence checks for required numeric fields
-	if q.Market == "" {
-		s.WriteError(w, Error{"Missing required field", []FieldError{{Field: "market"}}}, http.StatusBadRequest)
-		return
-	}
-
-	context := r.Context()
-	srv, err := binance.NewHistoryConsumer(context)
+	srv, err := binance.NewHistoryConsumer(r.Context())
 	if err != nil {
 		s.WriteError(w, err)
 		return
@@ -213,7 +206,9 @@ func (s *Server) handleData(w http.ResponseWriter, r *http.Request) {
 	var errs []FieldError
 
 	// Download and transform (this should create or reuse a parquet file)
-	for cur := *q.FromTime(); !cur.After(*q.ToTime()); cur = cur.AddDate(0, 0, 1) {
+	fromTime := *q.FromTime()
+	toTime := *q.ToTime()
+	for cur := fromTime; !cur.After(toTime); cur = cur.AddDate(0, 0, 1) {
 		asset := &binance.HistoryAsset{
 			MarketType: q.GetMarketType(),
 			Frequency:  binance.Daily,
