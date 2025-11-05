@@ -2,8 +2,6 @@ package api
 
 import (
 	"bytes"
-	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"sync-v3/pkg/binance"
@@ -90,6 +88,9 @@ func TestCandles(t *testing.T) {
 			MarketType: string(binance.Spot),
 			Frame:      binance.OneMinute,
 			Indicator:  string(binance.Klines),
+			Market:     "ETHUSDT",
+			From:       day.UnixMicro(),
+			To:         end.UnixMicro(),
 		}).MarshalJSON()
 
 		if err != nil {
@@ -99,22 +100,27 @@ func TestCandles(t *testing.T) {
 		// params :=
 
 		w := QueryServer(t, http.MethodGet, "/v1/data", q)
-		responseText := string(w.Body.Bytes())
+		r, err := HandleServerResponse[[]binance.ParquetKline](w)
 
-		var errResp Error
-		if err = json.Unmarshal([]byte(responseText), &errResp); err != nil {
-			t.Errorf("Failed to unmarshal error response: %v", err)
-		}
-		if errResp.Message != "" {
-			t.Errorf("Error response message is not empty: %v", errResp)
-		}
-
-		result, err := data.JsonDecode[[]struct{ Test int }](w.Body)
 		if err != nil {
 			t.Errorf("Failed to decode response: %v", err)
 		}
-		println(result)
 
-		fmt.Println(day)
+		if r == nil {
+			t.Errorf("Response is nil")
+		}
+
 	}
+}
+
+func HandleServerResponse[T any](w *httptest.ResponseRecorder) (r *T, err error) {
+	body := w.Body
+	if w.Code != http.StatusOK {
+		r, err := data.JsonDecode[Error](body)
+		if err != nil {
+			return nil, err
+		}
+		return nil, r
+	}
+	return data.JsonDecode[T](body)
 }

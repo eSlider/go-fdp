@@ -143,6 +143,14 @@ func (dq *AssetRequest) MarshalJSON() ([]byte, error) {
 	return marshal, err
 }
 
+func (dq *AssetRequest) GetMarketType() binance.MarketType {
+	return binance.NewMarketType(dq.MarketType)
+}
+
+func (dq *AssetRequest) GetFrame() binance.Frame {
+	return binance.NewFrame(dq.Frame)
+}
+
 type FieldError struct {
 	Field   string `json:"field,omitempty"`
 	Value   any    `json:"-"`
@@ -199,36 +207,17 @@ func (s *Server) handleData(w http.ResponseWriter, r *http.Request) {
 	// Loop from start to end by every year and month
 
 	// Map frame and market type from query
-	frame := binance.Frame(q.Frame)
-	if frame == "" {
-		frame = binance.OneMinute
-	}
-	var mtype binance.MarketType
-	switch q.MarketType {
-	case "", string(binance.Spot):
-		mtype = binance.Spot
-	case string(binance.Futures):
-		mtype = binance.Futures
-	default:
-		mtype = binance.Spot
-	}
-
-	fromTime := q.FromTime()
-	toTime := q.ToTime()
-	// start := time.Date(fromTime.Year(), fromTime.Month(), fromTime.Day(), 0, 0, 0, 0, time.UTC)
-	// end := time.Date(toTime.Year(), toTime.Month(), toTime.Day(), 0, 0, 0, 0, time.UTC)
-	start := *fromTime
-	end := *toTime
 
 	// Collect results
 	var infos []*binance.AssetETLInfo
 	var errs []FieldError
 
-	for cur := start; !cur.After(end); cur = cur.AddDate(0, 0, 1) {
+	// Download and transform (this should create or reuse a parquet file)
+	for cur := *q.FromTime(); !cur.After(*q.ToTime()); cur = cur.AddDate(0, 0, 1) {
 		asset := &binance.HistoryAsset{
-			MarketType: mtype,
+			MarketType: q.GetMarketType(),
 			Frequency:  binance.Daily,
-			Frame:      frame,
+			Frame:      q.GetFrame(),
 			Indicator:  binance.Klines,
 			Date:       cur,
 			Market:     q.Market,
@@ -270,11 +259,11 @@ func (s *Server) handleData(w http.ResponseWriter, r *http.Request) {
 	// Query klines data
 	result, err := s.CandlesFromParquet(CandleParquetQuery{
 		Market:     q.Market,
-		Frame:      string(frame),
+		Frame:      string(q.GetFrame()),
 		Indicator:  q.Indicator,
 		MarketType: q.MarketType,
-		From:       fromTime.UnixMilli(),
-		To:         toTime.UnixMilli(),
+		From:       q.FromTime().UnixMilli(),
+		To:         q.ToTime().UnixMilli(),
 	})
 
 	if err != nil {
@@ -301,12 +290,11 @@ func (s *Server) handleSQL(w http.ResponseWriter, r *http.Request) {
 	log.Printf("Received SQL query: %s", req.Query)
 	if req.Query == "" {
 		s.WriteError(w, errors.New("query is empty"), http.StatusBadRequest)
-
 		return
 	}
 
 	// Execute the query
-	results, err := s.DbQueryMap(req.Query)
+	results, err := s.QueryMap(req.Query)
 	if err != nil {
 		s.WriteError(w, err)
 		return
@@ -337,6 +325,13 @@ func (s *Server) Validate(dq any, r *http.Request) error {
 		}
 	}
 
+	// Read query parameters from request body
+	if r.Body != nil {
+		if err := json.NewDecoder(r.Body).Decode(&m); err != nil {
+			return err
+		}
+	}
+
 	// Decode query parameters
 	if err := mapstructure.WeakDecode(m, dq); err != nil {
 		return err
@@ -350,12 +345,26 @@ func (s *Server) Validate(dq any, r *http.Request) error {
 	return nil
 }
 
-func (s *Server) DbQuery(
+func (s *Server) QueryDatabase(
 	query string,
 	dq any,
 ) (result []any, err error) {
+
+	// Validate query parameters
+	if err := s.validate.Struct(dq); err != nil {
+		return nil, err
+	}
+
+	// Format query
 	q := format.Sprintf(query, dq)
+
+	// If query has "%<", means not all values are filled, so we need to replace them
+	if strings.Contains(q, "%<") {
+		return nil, fmt.Errorf("query is not complete: %s", q)
+	}
+
 	log.Printf("Executing query: %s", q)
+
 	rows, err := s.db.Query(q)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute query: %w", err)
@@ -400,12 +409,6 @@ func (s *Server) DbQuery(
 			valueMap[name] = valuePtrs[i]
 		}
 
-		// v := new(CandleResponse)
-		// err = mapstructure.WeakDecode(valuePtrs, v)
-		// if err != nil {
-		// 	return nil, fmt.Errorf("failed to decode row: %w", err)
-		// }
-
 		result = append(result, valueMap)
 	}
 	return result, nil
@@ -421,13 +424,12 @@ func (s *Server) WriteError(w http.ResponseWriter, err error, codeOption ...int)
 	w.WriteHeader(code)
 
 	var res *Error
-
-	switch err.(type) {
+	switch typeErr := err.(type) {
 	case validator.ValidationErrors:
 		res = &Error{
 			Message: "Validation failed",
 		}
-		for _, e := range err.(validator.ValidationErrors) {
+		for _, e := range typeErr {
 			res.Errors = append(res.Errors, FieldError{
 				Field:   e.Field(),
 				Value:   e.Value(),
@@ -437,20 +439,24 @@ func (s *Server) WriteError(w http.ResponseWriter, err error, codeOption ...int)
 			})
 		}
 
+	case FieldError:
+		res = &Error{
+			Message: "Field error",
+			Errors:  []FieldError{typeErr},
+		}
 	case *FieldError:
 		res = &Error{
 			Message: "Field error",
-			Errors: []FieldError{
-				*err.(*FieldError),
-			},
+			Errors:  []FieldError{*typeErr},
 		}
 	case *Error:
-		errors.As(err, &res)
+		res = typeErr
 	default:
 		res = &Error{
 			Message: err.Error(),
 		}
 	}
+
 	s.WriteJson(w, res)
 }
 
@@ -486,30 +492,20 @@ type CandleParquetQuery struct {
 	To         int64  `validate:"required"`
 }
 
+// CandlesFromParquet returns candles from parquet files
 func (s *Server) CandlesFromParquet(q CandleParquetQuery) (result []any, err error) {
 
-	// Validate query
-	if err := s.validate.Struct(q); err != nil {
-		return nil, err
-	}
-
-	return s.DbQuery(`SELECT
-	    *
-	FROM
-		read_parquet(
-			'data/%<mtype>s/daily/%<indicator>s/%<market>s/%<frame>s/*/*/*.parquet',
-			hive_partitioning = true
-		)
-	where
-		open_time > epoch_ms(%<from>d)::TIMESTAMP
-	AND
-		close_time <= epoch_ms(%<to>d)::TIMESTAMP
-	order by
-		close_time desc
+	return s.QueryDatabase(`
+		SELECT *
+		FROM read_parquet('data/%<MarketType>s/daily/%<Indicator>s/%<Market>s/%<Frame>s/*/*/*.parquet',
+hive_partitioning=true)
+		WHERE	open_time 	> epoch_ms(%<From>d)::TIMESTAMP
+		AND		close_time <= epoch_ms(%<To>d)::TIMESTAMP
+		ORDER BY close_time DESC
 	`, q)
 }
 
-func (s *Server) DbQueryMap(q string) (any, error) {
+func (s *Server) QueryMap(q string) (any, error) {
 	rows, err := s.db.Query(q)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute query: %w", err)
@@ -542,9 +538,9 @@ func (s *Server) DbQueryMap(q string) (any, error) {
 			switch v := values[i].(type) {
 			case []byte:
 				row[col] = string(v)
-			case time.Time:
-				row[col] = v.UnixMilli()
 			case *time.Time:
+				row[col] = v.UnixMilli()
+			case time.Time:
 				row[col] = v.UnixMilli()
 			default:
 				row[col] = v

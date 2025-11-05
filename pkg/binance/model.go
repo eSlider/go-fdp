@@ -67,8 +67,17 @@ const (
 	OneDay            = "1d"
 )
 
+// String - returns a frame
 func (f Frame) String() string {
 	return string(f)
+}
+
+// NewFrame - returns a frame
+func NewFrame(frame string) Frame {
+	if frame == "" {
+		return OneMinute
+	}
+	return Frame(frame)
 }
 
 type FutureType string
@@ -115,6 +124,23 @@ const (
 	Futures            = "futures"
 	Option             = "option"
 )
+
+func (m MarketType) String() string {
+	return string(m)
+}
+
+func NewMarketType(s string) MarketType {
+	switch s {
+	case "futures":
+		return Futures
+	case "option":
+		return Option
+	case "spot":
+		return Spot
+	default:
+		return Spot
+	}
+}
 
 type Indicator string
 
@@ -326,13 +352,13 @@ func (k *Kline) UnmarshalJSON(data []byte) error {
 }
 
 type ParquetKline struct {
-	OpenTime  int64   `parquet:"name=open_time,type=INT64,convertedtype=TIMESTAMP_MICROS"`
-	CloseTime int64   `parquet:"name=close_time,type=INT64, convertedtype=TIMESTAMP_MICROS"`
-	Open      float64 `parquet:"name=open_price, type=DOUBLE"`
-	High      float64 `parquet:"name=high_price, type=DOUBLE"`
-	Low       float64 `parquet:"name=low_price, type=DOUBLE"`
-	Close     float64 `parquet:"name=close_price, type=DOUBLE"`
-	Volume    float64 `parquet:"name=volume, type=DOUBLE"`
+	OpenTime  int64   `parquet:"name=open_time,type=INT64,convertedtype=TIMESTAMP_MICROS" json:"open_time"`
+	CloseTime int64   `parquet:"name=close_time,type=INT64, convertedtype=TIMESTAMP_MICROS" json:"close_time"`
+	Open      float64 `parquet:"name=open_price, type=DOUBLE" json:"open_price"`
+	High      float64 `parquet:"name=high_price, type=DOUBLE" json:"high_price"`
+	Low       float64 `parquet:"name=low_price, type=DOUBLE" json:"low_price"`
+	Close     float64 `parquet:"name=close_price, type=DOUBLE" json:"close_price"`
+	Volume    float64 `parquet:"name=volume, type=DOUBLE" json:"volume"`
 }
 
 // AggTrade - binance aggregated trade data
