@@ -55,9 +55,10 @@ type HistoryConsumer struct {
 	bucket     string
 	localDir   string // Local directory for downloaded files
 
+	storeZIP bool // Store zip files locally
+
 	// Options
 	recreateParquet bool // Recreate parquet files if they already exist
-	storeZIP        bool // Store zip files locally
 	storeCSV        bool // Store CSV files locally
 }
 
@@ -136,7 +137,7 @@ func (s *HistoryConsumer) DownloadAndTransform(
 		}
 
 		link := asset.SymbolDateAssetZipLink()
-		parquetPath := asset.ParquetPath()
+		parquetPath := fs.ModuleRootPath() + "/" + asset.ParquetPath()
 
 		if s.recreateParquet {
 			os.Remove(parquetPath)
@@ -188,6 +189,7 @@ func (s *HistoryConsumer) DownloadAndTransform(
 			}
 
 			parquetWriteCh, prqErrCh := data.WriteParquet[ParquetKline](parquetPath)
+
 			go func() {
 				for prqErr := range prqErrCh {
 					if prqErr != nil {
@@ -207,6 +209,9 @@ func (s *HistoryConsumer) DownloadAndTransform(
 				}
 				parquetWriteCh <- parquet
 			}
+			close(parquetWriteCh)
+
+			return
 		}
 
 		// Download and cache zip file

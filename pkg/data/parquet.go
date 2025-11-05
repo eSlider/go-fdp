@@ -80,7 +80,7 @@ func WriteParquet[T any](
 		}
 
 		close(errCh)
-		fmt.Println("Finished writing parquet file")
+		fmt.Printf("Finished writing parquet:%s ", path)
 	}()
 	return
 }
