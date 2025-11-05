@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	_ "sync-v3/pkg/data"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/google/go-querystring/query"
@@ -71,8 +72,6 @@ func (r *CandleRequestV3) GetURlParams() string {
 }
 
 func getCurrentCandle(cr *CandleRequestV3) ([]*Kline, error) {
-	cr.Limit = 1000
-
 	url := fmt.Sprintf("https://api.binance.com/api/v3/klines?%s", cr.GetURlParams())
 
 	resp, err := http.Get(url)
@@ -91,10 +90,15 @@ func getCurrentCandle(cr *CandleRequestV3) ([]*Kline, error) {
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
-	var data = make([]*Kline, cr.Limit)
-	if err := json.Unmarshal(body, &data); err != nil {
+	var r = make([]*Kline, cr.Limit)
+	if err := json.Unmarshal(body, &r); err != nil {
 		return nil, fmt.Errorf("failed to parse JSON: %w", err)
 	}
 
-	return data, nil
+	// for _, k := range r {
+	// 	k.OpenTimeDate = data.AnyTimestampToTime(k.OpenTime)
+	// 	k.CloseTimeDate = data.AnyTimestampToTime(k.CloseTime)
+	// }
+
+	return r, nil
 }

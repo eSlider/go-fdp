@@ -163,12 +163,12 @@ type HistoryAsset struct {
 	Date   time.Time
 }
 
-func (q HistoryAsset) String() string {
+func (q *HistoryAsset) String() string {
 	return q.SymbolDateAssetZipLink()
 }
 
 // SymbolLink - is a link to a specific asset directory of a symbol
-func (q HistoryAsset) SymbolLink() string {
+func (q *HistoryAsset) SymbolLink() string {
 	if q.MarketType == "" {
 		q.MarketType = Spot
 	}
@@ -192,7 +192,7 @@ func (q HistoryAsset) SymbolLink() string {
 }
 
 // SymbolFrameLink - is a link to a specific asset and frame directory of zip files
-func (q HistoryAsset) SymbolFrameLink() string {
+func (q *HistoryAsset) SymbolFrameLink() string {
 	// Indicator having no frame directories
 	if q.Indicator == Klines {
 		return fmt.Sprintf("%s/%s",
@@ -204,7 +204,7 @@ func (q HistoryAsset) SymbolFrameLink() string {
 }
 
 // SymbolDateAssetZipLink - is a link to a concrete asset zip file
-func (q HistoryAsset) SymbolDateAssetZipLink() string {
+func (q *HistoryAsset) SymbolDateAssetZipLink() string {
 	var layout string
 	switch q.Frequency {
 	case Monthly:
@@ -265,7 +265,7 @@ func NewHistoryAssetByPath(path string) (a *HistoryAsset, err error) {
 }
 
 // IsZipLink - is a link to a concrete asset zip file
-func (q HistoryAsset) IsZipLink() bool {
+func (q *HistoryAsset) IsZipLink() bool {
 	// Market and Date are always required
 	if q.Date.IsZero() || q.Market == "" {
 		return false
@@ -279,7 +279,7 @@ func (q HistoryAsset) IsZipLink() bool {
 
 // ParquetPath - returns parquet file path
 //   - Create link to work with hive partitioning
-func (q HistoryAsset) ParquetPath() string {
+func (q *HistoryAsset) ParquetPath() string {
 	link := q.SymbolDateAssetZipLink()
 	path := strings.TrimSuffix(link, ".zip") + ".parquet"
 
@@ -297,6 +297,20 @@ func (q HistoryAsset) ParquetPath() string {
 	dirName := filepath.Dir(path)
 
 	return dirName + "/" + fileName
+}
+
+// IsToday - is a date today
+func (q *HistoryAsset) IsToday() bool {
+	// Check start date, if it's before now until midnight, handle using other api
+	now := time.Now().UTC()
+	todayMidnight := time.Date(
+		now.Year(), now.Month(), now.Day(),
+		0, 0, 0, 0,
+		now.Location())
+	// .Add(-1 * time.Microsecond) // -1 microsecond
+	// Check if required asset.Date is before, then yesterday midnight 24:00
+	isToday := q.Date.After(todayMidnight) || q.Date.Equal(todayMidnight)
+	return isToday
 }
 
 // Transformer - interface for transforming data to several formats
@@ -318,6 +332,16 @@ type Kline struct {
 	TakerBuyVolume float64 `csv:"9"`
 	TakerBuyQuote  float64 `csv:"10"`
 	Ignore         float64 `csv:"11"`
+	// OpenTimeDate   *time.Time `csv:"-"`
+	// CloseTimeDate  *time.Time `csv:"-"`
+}
+
+func (k *Kline) String() string {
+	openTime := data.AnyTimestampToTime(k.OpenTime)
+	closeTime := data.AnyTimestampToTime(k.CloseTime)
+
+	// return only time human readable
+	return fmt.Sprintf("%s - %s", openTime.Format("2006-01-02 15:04:05"), closeTime.Format("2006-01-02 15:04:05"))
 }
 
 func strToFloat(s string) float64 {

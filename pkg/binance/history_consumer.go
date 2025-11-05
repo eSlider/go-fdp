@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"sync"
 	"sync-v3/pkg/data"
 	"sync-v3/pkg/fs"
 	"time"
@@ -131,6 +132,8 @@ func (s *HistoryConsumer) DownloadAndTransform(
 		defer close(infoCh)
 		defer close(errCh)
 
+		asset.IsToday()
+
 		if !asset.IsZipLink() {
 			errCh <- errors.Join(ErrNotZipLink, fmt.Errorf("invalid asset: %s", asset))
 			return
@@ -139,57 +142,16 @@ func (s *HistoryConsumer) DownloadAndTransform(
 		link := asset.SymbolDateAssetZipLink()
 		parquetPath := fs.ModuleRootPath() + "/" + asset.ParquetPath()
 
-		if s.recreateParquet {
-			os.Remove(parquetPath)
-		}
-
-		// Check if a file already exists, then skip downloading, transforming and loading
-		if fs.FileExists(parquetPath) {
-			infoCh <- &AssetETLInfo{
-				Path:   parquetPath,
-				Status: StatusParquetDone,
-				Info:   fmt.Sprintf("Parquet file already exists: %s", parquetPath),
-			}
-			return
-		}
-
-		// Check start date, if it's before now until midnight, handle using other api
-		now := time.Now().UTC()
-		todayMidnight := time.Date(
-			now.Year(), now.Month(), now.Day(),
-			0, 0, 0, 0,
-			now.Location())
-		// .Add(-1 * time.Microsecond) // -1 microsecond
-
-		// Check if required asset.Date is before, then yesterday midnight 24:00
-		isToday := asset.Date.After(todayMidnight)
-
 		// If it's today, get candles from current api
-		if isToday {
+		if asset.IsToday() {
+			os.Remove(parquetPath)
 
 			// hoursCountBefore := asset.Date.Sub(todayMidnight).Hours()
 
 			// startTime is -1 Hour before
-			startTime := asset.Date.Add(-1 * time.Hour).UnixMicro()
-
-			// Start date is after today midnight, use other api
-			st := asset.Date.UnixMicro()
-			klines, err := getCurrentCandle(
-				&CandleRequestV3{
-					Symbol:    asset.Market,
-					Interval:  string(asset.Frame),
-					StartTime: &startTime,
-					EndTime:   &st,
-					TimeZone:  nil,
-					Limit:     1000,
-				},
-			)
-			if err != nil {
-				errCh <- fmt.Errorf("error getting current candle: %v", err)
-			}
+			now := time.Now()
 
 			parquetWriteCh, prqErrCh := data.WriteParquet[ParquetKline](parquetPath)
-
 			go func() {
 				for prqErr := range prqErrCh {
 					if prqErr != nil {
@@ -201,16 +163,72 @@ func (s *HistoryConsumer) DownloadAndTransform(
 					}
 				}
 			}()
-			for _, kline := range klines {
-				parquet, err2 := kline.Parquet()
-				if err2 != nil {
-					errCh <- fmt.Errorf("error converting csv entry to parquet: %v", err2)
-					return
-				}
-				parquetWriteCh <- parquet
-			}
-			close(parquetWriteCh)
 
+			// Midnight 24:00
+			startTime := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+
+			// For from midnight, +1 hour until now
+			var wg sync.WaitGroup
+			for startTime.Before(now) {
+				startTimeMc := startTime.UnixMicro()
+				startTime = startTime.Add(time.Hour)
+				endTimeMc := startTime.UnixMicro()
+
+				if endTimeMc > now.UnixMicro() {
+					endTimeMc = now.UnixMicro()
+				}
+
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					klines, err := getCurrentCandle(
+						&CandleRequestV3{
+							Symbol:    asset.Market,
+							Interval:  string(asset.Frame),
+							StartTime: &startTimeMc,
+							EndTime:   &endTimeMc,
+							TimeZone:  nil,
+							Limit:     60,
+						},
+					)
+					if err != nil {
+						errCh <- fmt.Errorf("error getting current candle: %v", err)
+					}
+
+					for _, kline := range klines {
+						parquet, err2 := kline.Parquet()
+						log.Printf("Kline: %s", kline)
+						if err2 != nil {
+							errCh <- fmt.Errorf("error converting csv entry to parquet: %v", err2)
+							return
+						}
+						parquetWriteCh <- parquet
+					}
+				}()
+			}
+			wg.Wait()
+
+			// Close the parquet channel but wait for it to finish
+			go func() {
+				close(parquetWriteCh)
+			}()
+			<-errCh
+
+			return
+		}
+
+		// Delete parquet file if it exists
+		if s.recreateParquet {
+			os.Remove(parquetPath)
+		}
+
+		// Check if a file already exists, then skip downloading, transforming and loading
+		if fs.FileExists(parquetPath) {
+			infoCh <- &AssetETLInfo{
+				Path:   parquetPath,
+				Status: StatusParquetDone,
+				Info:   fmt.Sprintf("Parquet file already exists: %s", parquetPath),
+			}
 			return
 		}
 
