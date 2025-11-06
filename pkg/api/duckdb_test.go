@@ -46,7 +46,7 @@ func TestDuckDBParquetReading(t *testing.T) {
 		defer db.Close()
 
 		// Get absolute path to parquet file
-		parquetPath := filepath.Join(fs.ModuleRootPath(), "data/spot/monthly/klines/ETHUSDT/1m/ETHUSDT-1m-2020-08.parquet")
+		parquetPath := fs.GetModuleRelativePath("data/spot/monthly/klines/ETHUSDT/1m/ETHUSDT-1m-2020-08.parquet")
 
 		// Test reading a specific klines parquet file (same pattern as handler)
 		query := `SELECT COUNT(*) FROM read_parquet(?)`
