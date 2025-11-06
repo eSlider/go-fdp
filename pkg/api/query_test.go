@@ -92,7 +92,7 @@ func TestCandles(t *testing.T) {
 		MarketType: string(binance.Spot),
 		Frame:      binance.OneMinute,
 		Indicator:  string(binance.Klines),
-		Market:     "ETHUSDT",
+		Market:     "ZECUSDT",
 		From:       end.UnixMicro(),
 		To:         now.UnixMicro(),
 	}).MarshalJSON()
@@ -103,7 +103,7 @@ func TestCandles(t *testing.T) {
 
 	// params :=
 
-	r, err := HandleServerResponse[[]binance.ParquetKline](QueryServer(t, http.MethodGet, "/v1/data", q))
+	r, err := HandleServerResponse[[]*CandleResponse](QueryServer(t, http.MethodGet, "/v1/data", q))
 
 	if err != nil {
 		t.Errorf("Failed to decode response: %v", err)

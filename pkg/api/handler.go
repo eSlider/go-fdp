@@ -7,12 +7,11 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"strings"
 	"sync-v3/pkg/binance"
 	"sync-v3/pkg/data"
+	"sync-v3/pkg/fs"
 	"time"
 
-	"github.com/chonla/format"
 	_ "github.com/duckdb/duckdb-go/v2"
 	"github.com/go-playground/validator/v10"
 	"github.com/go-viper/mapstructure/v2"
@@ -340,75 +339,6 @@ func (s *Server) Validate(dq any, r *http.Request) error {
 	return nil
 }
 
-func (s *Server) QueryDatabase(
-	query string,
-	dq any,
-) (result []any, err error) {
-
-	// Validate query parameters
-	if err := s.validate.Struct(dq); err != nil {
-		return nil, err
-	}
-
-	// Format query
-	q := format.Sprintf(query, dq)
-
-	// If query has "%<", means not all values are filled, so we need to replace them
-	if strings.Contains(q, "%<") {
-		return nil, fmt.Errorf("query is not complete: %s", q)
-	}
-
-	log.Printf("Executing query: %s", q)
-
-	rows, err := s.db.Query(q)
-	if err != nil {
-		return nil, fmt.Errorf("failed to execute query: %w", err)
-	}
-	defer rows.Close()
-
-	// Get column names
-	columns, err := rows.Columns()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get columns: %w", err)
-	}
-	log.Printf("Columns: %v", columns)
-
-	// Convert to JSON
-	for rows.Next() {
-		// Create a slice of interface{} to hold the values
-		valuePtrs := make([]any, len(columns))
-		for i, name := range columns {
-			// if string contain time or timestamp or date, then it should be int
-			if strings.Contains(name, "time") ||
-				strings.Contains(name, "timestamp") ||
-				strings.Contains(name, "date") {
-				valuePtrs[i] = new(ResponseDate)
-			} else if strings.Contains(name, "volume") ||
-				strings.Contains(name, "float") ||
-				strings.Contains(name, "price") {
-				valuePtrs[i] = new(float64)
-			} else {
-				valuePtrs[i] = new(string)
-			}
-		}
-
-		// Scan into the slice
-		err := rows.Scan(valuePtrs...)
-		if err != nil {
-			return nil, fmt.Errorf("failed to scan row: %w", err)
-		}
-
-		// Create map
-		valueMap := make(map[string]any)
-		for i, name := range columns {
-			valueMap[name] = valuePtrs[i]
-		}
-
-		result = append(result, valueMap)
-	}
-	return result, nil
-}
-
 // WriteError writes an error response to the client
 func (s *Server) WriteError(w http.ResponseWriter, err error, codeOption ...int) {
 	code := http.StatusInternalServerError
@@ -485,19 +415,51 @@ type CandleParquetQuery struct {
 	MarketType string `validate:"required"`
 	From       int64  `validate:"required"`
 	To         int64  `validate:"required"`
+	DataPath   string // Path to data directory
 }
 
 // CandlesFromParquet returns candles from parquet files
-func (s *Server) CandlesFromParquet(q CandleParquetQuery) (result []any, err error) {
-
-	return s.QueryDatabase(`
-		SELECT *
-		FROM read_parquet('data/%<MarketType>s/daily/%<Indicator>s/%<Market>s/%<Frame>s/*/*/*.parquet',
+func (s *Server) CandlesFromParquet(q CandleParquetQuery) (result []*CandleResponse, err error) {
+	q.DataPath = fs.GetModuleRelativePath("data")
+	resCh, errCh := data.QueryParquets(s.db, `
+		SELECT
+			open_time as openTime,
+			close_time as closeTime,
+			open_price as open,
+			close_price as close,
+			high_price as high,
+			low_price as low,
+			volume as volume
+		FROM read_parquet('%<DataPath>s/%<MarketType>s/daily/%<Indicator>s/%<Market>s/%<Frame>s/*/*/*.parquet',
 hive_partitioning=true)
 		WHERE	open_time 	> epoch_ms(%<From>d)::TIMESTAMP
 		AND		close_time <= epoch_ms(%<To>d)::TIMESTAMP
 		ORDER BY close_time DESC
 	`, q)
+
+	for {
+		select {
+		case err, ok := <-errCh:
+			if ok {
+				return nil, err
+			} else {
+				return result, nil
+			}
+
+		case entry, ok := <-resCh:
+			if !ok {
+				return result, nil
+			} else {
+				instance := new(CandleResponse)
+				if err := mapstructure.WeakDecode(entry, instance); err != nil {
+					return nil, err
+				}
+				result = append(result, instance)
+
+			}
+
+		}
+	}
 }
 
 func (s *Server) QueryMap(q string) (any, error) {
@@ -546,19 +508,12 @@ func (s *Server) QueryMap(q string) (any, error) {
 	return results, nil
 }
 
-type ResponseDate time.Time
-
-// MarshalJSON implements the json.Marshaler interface
-func (r ResponseDate) MarshalJSON() ([]byte, error) {
-	return json.Marshal(time.Time(r).UnixMilli())
-}
-
 type CandleResponse struct {
-	OpenTime  ResponseDate `json:"openTime"`
-	CloseTime ResponseDate `json:"closeTime"`
-	Open      float64      `json:"open"`
-	High      float64      `json:"high"`
-	Low       float64      `json:"low"`
-	Close     float64      `json:"close"`
-	Volume    float64      `json:"volume"`
+	OpenTime  data.ResponseDate `json:"openTime"`
+	CloseTime data.ResponseDate `json:"closeTime"`
+	Open      float64           `json:"open"`
+	High      float64           `json:"high"`
+	Low       float64           `json:"low"`
+	Close     float64           `json:"close"`
+	Volume    float64           `json:"volume"`
 }

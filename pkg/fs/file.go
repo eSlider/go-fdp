@@ -33,3 +33,21 @@ func ModuleRootPath() string {
 	p := strings.Join(paths, "/")
 	return p
 }
+
+func GetModuleRelativePath(path string) string {
+	modPath := ModuleRootPath()
+	curPath, err := os.Getwd()
+	if err != nil {
+		panic(err)
+		return ""
+	}
+
+	prefix := strings.TrimPrefix(curPath, modPath)
+	a := strings.Split(prefix, "/")
+	if len(a) < 2 {
+		return path
+	}
+
+	relPath := strings.Repeat("../", len(a)-1)
+	return relPath + path
+}
