@@ -46,7 +46,7 @@ func HandleServerResponse[T any](w *httptest.ResponseRecorder) (r *T, err error)
 func TestMarkets(t *testing.T) {
 
 	w := QueryServer(t, "GET", "/v1/markets", nil)
-	r, err := data.JsonDecode[[]binance.Market](w.Body)
+	r, err := data.JsonDecode[[]*binance.Market](w.Body)
 
 	if err != nil {
 		t.Errorf("Failed to decode response: %v", err)
