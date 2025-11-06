@@ -71,7 +71,7 @@ func (r *CandleRequestV3) GetURlParams() string {
 	return v.Encode()
 }
 
-func getCurrentCandle(cr *CandleRequestV3) ([]*Kline, error) {
+func GetCurrentCandles(cr *CandleRequestV3) ([]*Kline, error) {
 	url := fmt.Sprintf("https://api.binance.com/api/v3/klines?%s", cr.GetURlParams())
 
 	resp, err := http.Get(url)

@@ -176,7 +176,7 @@ func (s *HistoryConsumer) DownloadAndTransform(
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
-					klines, err := getCurrentCandle(
+					klines, err := GetCurrentCandles(
 						&CandleRequestV3{
 							Symbol:    asset.Market,
 							Interval:  string(asset.Frame),

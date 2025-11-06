@@ -51,7 +51,7 @@ func TestCurrentCandles(t *testing.T) {
 
 					fmt.Println(market, frame, indicator)
 
-					kandles, err := getCurrentCandle(cr)
+					kandles, err := GetCurrentCandles(cr)
 					if err != nil {
 						t.Fatal(err)
 					}
