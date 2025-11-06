@@ -65,8 +65,7 @@ func TestMarkets(t *testing.T) {
 }
 
 // TestCandles - test candles endpoint
-func TestCandles(t *testing.T) {
-
+func TestSQL(t *testing.T) {
 	w := QueryServer(t, http.MethodPost, "/v1/sql", []byte(`{"query": "SELECT 1 as test"}`))
 	result, err := data.JsonDecode[[]struct{ Test int }](w.Body)
 	if err != nil {
@@ -80,16 +79,8 @@ func TestCandles(t *testing.T) {
 		t.Errorf("Expected 1, got %d", (*result)[0].Test)
 	}
 
-	// Create asset configuration for a small dataset (2017-08 ETHUSDT 1m klines)
-	// This date has existing data and we can verify the count
-	// asset := &binance.HistoryAsset{
-	// 	MarketType: binance.Spot,
-	// 	Frequency:  binance.Daily,
-	// 	Frame:      binance.OneMinute,
-	// 	Indicator:  binance.Klines,
-	// 	Date:       now,
-	// 	Market:     "ETHUSDT",
-	// }
+}
+func TestCandles(t *testing.T) {
 	now := time.Now()
 	end := now.AddDate(0, 0, -1)
 
@@ -112,8 +103,7 @@ func TestCandles(t *testing.T) {
 
 	// params :=
 
-	w = QueryServer(t, http.MethodGet, "/v1/data", q)
-	r, err := HandleServerResponse[[]binance.ParquetKline](w)
+	r, err := HandleServerResponse[[]binance.ParquetKline](QueryServer(t, http.MethodGet, "/v1/data", q))
 
 	if err != nil {
 		t.Errorf("Failed to decode response: %v", err)

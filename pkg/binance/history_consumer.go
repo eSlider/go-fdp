@@ -125,6 +125,13 @@ func (s *HistoryConsumer) DownloadAndTransform(
 	infoCh chan *AssetETLInfo,
 	errCh chan error,
 ) {
+	defer func() {
+		// Handle errors
+		if r := recover(); r != nil {
+			errCh <- fmt.Errorf("panic: %v", r)
+		}
+	}()
+
 	infoCh = make(chan *AssetETLInfo)
 	errCh = make(chan error)
 
@@ -147,22 +154,10 @@ func (s *HistoryConsumer) DownloadAndTransform(
 			os.Remove(parquetPath)
 
 			// hoursCountBefore := asset.Date.Sub(todayMidnight).Hours()
-
 			// startTime is -1 Hour before
 			now := time.Now()
 
 			parquetWriteCh, prqErrCh := data.WriteParquet[ParquetKline](parquetPath)
-			go func() {
-				for prqErr := range prqErrCh {
-					if prqErr != nil {
-						infoCh <- &AssetETLInfo{
-							Path:   parquetPath,
-							Status: StatusError,
-							Err:    fmt.Errorf("error writing parquet: %v", prqErr),
-						}
-					}
-				}
-			}()
 
 			// Midnight 24:00
 			startTime := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
@@ -208,12 +203,26 @@ func (s *HistoryConsumer) DownloadAndTransform(
 			}
 			wg.Wait()
 
+			// Wait until a parquet writer finishes (an error channel is closed)
 			// Close the parquet channel but wait for it to finish
-			go func() {
-				close(parquetWriteCh)
-			}()
-			<-errCh
+			go close(parquetWriteCh)
 
+		ErrLoop:
+			for {
+				select {
+				case err, ok := <-prqErrCh:
+					if !ok {
+						break ErrLoop
+					}
+					infoCh <- &AssetETLInfo{
+						Path:   parquetPath,
+						Status: StatusError,
+						Err:    fmt.Errorf("error writing parquet: %v", err),
+					}
+				}
+			}
+
+			fmt.Printf("Finished writing today parquet:%s ", parquetPath)
 			return
 		}
 
