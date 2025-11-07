@@ -51,14 +51,8 @@ func TestMainProgramParquetCreation(t *testing.T) {
 		var errs []error
 
 		go func() {
-			for {
-				select {
-				case info, ok := <-infoCh:
-					if !ok {
-						return
-					}
-					infos = append(infos, info)
-				}
+			for info := range infoCh {
+				infos = append(infos, info)
 			}
 		}()
 

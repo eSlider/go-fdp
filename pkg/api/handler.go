@@ -253,7 +253,44 @@ func (s *Server) GetMarketHistory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Query klines data
-	result, err := s.CandlesFromParquet(CandleParquetQuery{
+	var result []*CandleResponse
+
+	// Check if the query includes today's date
+	now := time.Now()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	isQueryingToday := !q.FromTime().After(today) && !q.ToTime().Before(today.AddDate(0, 0, 1))
+
+	if isQueryingToday {
+		// Query today's data from DuckDB cache
+		asset := &binance.HistoryAsset{
+			MarketType: q.GetMarketType(),
+			Frequency:  binance.Daily,
+			Frame:      q.GetFrame(),
+			Indicator:  binance.Klines,
+			Date:       today,
+			Market:     q.Market,
+		}
+
+		todayResult, err := s.CandlesFromDuckDB(CandleDuckDBQuery{
+			Market:     q.Market,
+			Frame:      string(q.GetFrame()),
+			Indicator:  q.Indicator,
+			MarketType: q.MarketType,
+			From:       q.FromTime().UnixMilli(),
+			To:         q.ToTime().UnixMilli(),
+			DuckDBPath: fs.GetModuleRelativePath(asset.TodayDuckDBPath()),
+		})
+
+		if err != nil {
+			s.WriteError(w, err)
+			return
+		}
+
+		result = append(result, todayResult...)
+	}
+
+	// Query historical data from parquet files
+	historicalResult, err := s.CandlesFromParquet(CandleParquetQuery{
 		Market:     q.Market,
 		Frame:      string(q.GetFrame()),
 		Indicator:  q.Indicator,
@@ -266,6 +303,8 @@ func (s *Server) GetMarketHistory(w http.ResponseWriter, r *http.Request) {
 		s.WriteError(w, err)
 		return
 	}
+
+	result = append(result, historicalResult...)
 
 	s.WriteJson(w, result)
 }
@@ -420,6 +459,16 @@ type CandleParquetQuery struct {
 	DataPath   string // Path to data directory
 }
 
+type CandleDuckDBQuery struct {
+	Market     string `validate:"required"`
+	Frame      string `validate:"required"`
+	Indicator  string `validate:"required"`
+	MarketType string `validate:"required"`
+	From       int64  `validate:"required"`
+	To         int64  `validate:"required"`
+	DuckDBPath string // Path to DuckDB file
+}
+
 // CandlesFromParquet returns candles from parquet files
 func (s *Server) CandlesFromParquet(q CandleParquetQuery) (result []*CandleResponse, err error) {
 	q.DataPath = fs.GetModuleRelativePath("data")
@@ -462,6 +511,65 @@ hive_partitioning=true)
 
 		}
 	}
+}
+
+// CandlesFromDuckDB returns candles from DuckDB cache for today's data
+func (s *Server) CandlesFromDuckDB(q CandleDuckDBQuery) (result []*CandleResponse, err error) {
+	// Check if DuckDB file exists
+	if !fs.FileExists(q.DuckDBPath) {
+		// Return empty result if cache doesn't exist yet
+		return result, nil
+	}
+
+	// Open the DuckDB file
+	db, err := sql.Open("duckdb", q.DuckDBPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open DuckDB file: %w", err)
+	}
+	defer db.Close()
+
+	// Query the cached data
+	query := `
+		SELECT
+			open_time as openTime,
+			close_time as closeTime,
+			open_price as open,
+			high_price as high,
+			low_price as low,
+			close_price as close,
+			volume as volume
+		FROM klines
+		WHERE open_time >= ? AND close_time <= ?
+		ORDER BY close_time DESC`
+
+	rows, err := db.Query(query, q.From*1000, q.To*1000) // Convert to microseconds
+	if err != nil {
+		return nil, fmt.Errorf("failed to query DuckDB: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var candle CandleResponse
+		err := rows.Scan(
+			&candle.OpenTime,
+			&candle.CloseTime,
+			&candle.Open,
+			&candle.High,
+			&candle.Low,
+			&candle.Close,
+			&candle.Volume,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan row: %w", err)
+		}
+		result = append(result, &candle)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating rows: %w", err)
+	}
+
+	return result, nil
 }
 
 func (s *Server) QueryMap(q string) (any, error) {

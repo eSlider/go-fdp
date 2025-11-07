@@ -161,6 +161,7 @@ func (s *HistoryConsumer) DownloadAndTransform(
 		// If it's today, get candles from current api
 		if asset.IsToday() {
 			s.WriteToday(asset, errCh, infoCh)
+			return
 		}
 
 		// Delete parquet file if it exists
@@ -402,95 +403,112 @@ func (s *HistoryConsumer) GetAsset(asset *HistoryAsset) (info chan *AssetETLInfo
 }
 
 func (s *HistoryConsumer) WriteToday(asset *HistoryAsset, errCh chan error, infoCh chan *AssetETLInfo) {
-	parquetPath := fs.GetModuleRelativePath(asset.ParquetPath())
-	os.Remove(parquetPath)
-	// Check if parquet file already exists
-	if fs.FileExists(parquetPath) && false {
+	duckDBPath := fs.GetModuleRelativePath(asset.TodayDuckDBPath())
 
-		path := fmt.Sprintf("%d/%d/%d.parquet", asset.Date.Year(), asset.Date.Month(), asset.Date.Day())
+	// Open DuckDB file for today's cache
+	db, err := sql.Open("duckdb", duckDBPath)
+	if err != nil {
+		errCh <- fmt.Errorf("error opening DuckDB file %s: %v", duckDBPath, err)
+		return
+	}
+	defer db.Close()
 
-		// Get latest entries by openTime
-		// path := fmt.Sprintf("%d/%d/%d.parquet", asset.Date.Year(), asset.Date.Month(), asset.Date.Day())
-		data.QueryParquets(s.db, `
-						SELECT open_time,
-						FROM read_parquet(
-							'%<DataPath>s/%<MarketType>s/daily/%<Indicator>s/%<Market>s/%<Frame>s/%<HivePath>s',
-							hive_partitioning=true
-						)
-						ORDER BY openTime DESC`, &CandleParquetQuery{
-			DataPath:   fs.GetModuleRelativePath("data"),
-			MarketType: string(asset.MarketType),
-			Indicator:  string(asset.Indicator),
-			Market:     asset.Market,
-			Frame:      string(asset.Frame),
-			HivePath:   path,
-		})
-
+	// Create table for caching kline data if it doesn't exist
+	createTableSQL := `
+	CREATE TABLE IF NOT EXISTS klines (
+		open_time BIGINT,
+		close_time BIGINT,
+		open_price DOUBLE,
+		high_price DOUBLE,
+		low_price DOUBLE,
+		close_price DOUBLE,
+		volume DOUBLE,
+		PRIMARY KEY (open_time)
+	)`
+	if _, err := db.Exec(createTableSQL); err != nil {
+		errCh <- fmt.Errorf("error creating klines table: %v", err)
+		return
 	}
 
-	// hoursCountBefore := asset.Date.Sub(todayMidnight).Hours()
-	// startTime is -1 Hour before
 	now := time.Now()
+	todayMidnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 
-	parquetWriteCh, prqErrCh := data.WriteParquet[ParquetKline](parquetPath)
+	// Process data in hourly chunks from midnight to now
+	startTime := todayMidnight
 
-	// Midnight 24:00
-	startTime := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-
-	// For from midnight, +1 hour until now
 	var wg sync.WaitGroup
 	for startTime.Before(now) {
 		startTimeMc := startTime.UnixMicro()
-		startTime = startTime.Add(time.Hour)
-		endTimeMc := startTime.UnixMicro()
+		endTimeMc := startTime.Add(time.Hour).UnixMicro()
 
 		if endTimeMc > now.UnixMicro() {
 			endTimeMc = now.UnixMicro()
 		}
 
 		wg.Add(1)
-		go func() {
+		go func(start, end int64) {
 			defer wg.Done()
+
+			// Check if we already have data for this time range
+			var count int
+			checkSQL := `SELECT COUNT(*) FROM klines WHERE open_time >= ? AND open_time < ?`
+			if err := db.QueryRow(checkSQL, start, end).Scan(&count); err != nil {
+				errCh <- fmt.Errorf("error checking existing data: %v", err)
+				return
+			}
+
+			// If we already have data for this range, skip API call
+			if count > 0 {
+				return
+			}
+
+			// Fetch data from API
 			klines, err := GetCurrentCandles(
 				&CandleRequestV3{
 					Symbol:    asset.Market,
 					Interval:  string(asset.Frame),
-					StartTime: &startTimeMc,
-					EndTime:   &endTimeMc,
+					StartTime: &start,
+					EndTime:   &end,
 					TimeZone:  nil,
 					Limit:     60,
 				},
 			)
 			if err != nil {
 				errCh <- fmt.Errorf("error getting current candle: %v", err)
+				return
 			}
 
+			// Store new data in DuckDB
 			for _, kline := range klines {
-				parquet, err2 := kline.Parquet()
-				log.Printf("Kline: %s", kline)
-				if err2 != nil {
-					errCh <- fmt.Errorf("error converting csv entry to parquet: %v", err2)
+				insertSQL := `
+					INSERT OR IGNORE INTO klines (open_time, close_time, open_price, high_price, low_price, close_price, volume)
+					VALUES (?, ?, ?, ?, ?, ?, ?)`
+				_, err = db.Exec(insertSQL,
+					kline.OpenTime*1000, // Convert to microseconds
+					kline.CloseTime*1000,
+					kline.OpenPrice,
+					kline.HighPrice,
+					kline.LowPrice,
+					kline.ClosePrice,
+					kline.Volume,
+				)
+				if err != nil {
+					errCh <- fmt.Errorf("error inserting kline data: %v", err)
 					return
 				}
-				parquetWriteCh <- parquet
 			}
-		}()
+		}(startTimeMc, endTimeMc)
+
+		startTime = startTime.Add(time.Hour)
 	}
+
 	wg.Wait()
 
-	// Wait until a parquet writer finishes (an error channel is closed)
-	// Close the parquet channel but wait for it to finish
-	close(parquetWriteCh)
-	for err := range prqErrCh {
-		infoCh <- &AssetETLInfo{
-			Path:   parquetPath,
-			Status: StatusError,
-			Err:    fmt.Errorf("error writing parquet: %v", err),
-		}
+	infoCh <- &AssetETLInfo{
+		Path:   duckDBPath,
+		Status: StatusParquetDone, // Reusing status for completion
+		Info:   fmt.Sprintf("Cached today's klines in DuckDB: %s", duckDBPath),
 	}
-
-	fmt.Printf("Finished writing today parquet:%s ", parquetPath)
-	return
 }
 
 func NewHistoryConsumer(ctx context.Context) (*HistoryConsumer, error) {

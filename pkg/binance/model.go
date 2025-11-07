@@ -299,6 +299,16 @@ func (q *HistoryAsset) ParquetPath() string {
 	return dirName + "/" + fileName
 }
 
+// TodayDuckDBPath - returns the path to the DuckDB file for today's cached data
+func (q *HistoryAsset) TodayDuckDBPath() string {
+	return fmt.Sprintf("data/%s/%s/%s/%s/%s/today.duckdb",
+		q.MarketType,
+		q.Frequency,
+		q.Indicator,
+		q.Market,
+		q.Frame)
+}
+
 // IsToday - is a date today
 func (q *HistoryAsset) IsToday() bool {
 	// Check start date, if it's before now until midnight, handle using other api
