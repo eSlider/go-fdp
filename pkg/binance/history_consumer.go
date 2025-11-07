@@ -139,8 +139,6 @@ func (s *HistoryConsumer) DownloadAndTransform(
 		defer close(infoCh)
 		defer close(errCh)
 
-		asset.IsToday()
-
 		if !asset.IsZipLink() {
 			errCh <- errors.Join(ErrNotZipLink, fmt.Errorf("invalid asset: %s", asset))
 			return

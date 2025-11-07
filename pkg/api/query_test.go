@@ -2,7 +2,6 @@ package api
 
 import (
 	"bytes"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"sync-v3/pkg/binance"
@@ -84,9 +83,6 @@ func TestCandles(t *testing.T) {
 	now := time.Now()
 	end := now.AddDate(0, 0, -1)
 
-	// Trace time between start and end every day
-	// for day := now.AddDate(0, 0, -2); day.Before(end) || day.Equal(end); day = day.AddDate(0, 0, 1) {
-	fmt.Println(end)
 	q, err := (&AssetRequest{
 		Exchange:   "binance",
 		MarketType: string(binance.Spot),
@@ -101,10 +97,8 @@ func TestCandles(t *testing.T) {
 		t.Errorf("Failed to marshal query: %v", err)
 	}
 
-	// params :=
-
+	_ = new(Server).GetMarketHistory
 	r, err := HandleServerResponse[[]*CandleResponse](QueryServer(t, http.MethodGet, "/v1/data", q))
-
 	if err != nil {
 		t.Errorf("Failed to decode response: %v", err)
 	}
@@ -112,6 +106,4 @@ func TestCandles(t *testing.T) {
 	if r == nil {
 		t.Errorf("Response is nil")
 	}
-
-	// }
 }
