@@ -207,6 +207,8 @@ func (s *Server) GetMarketHistory(w http.ResponseWriter, r *http.Request) {
 	// Download and transform (this should create or reuse a parquet file)
 	fromTime := *q.FromTime()
 	toTime := *q.ToTime()
+
+	// Loop between dates
 	for cur := fromTime; !cur.After(toTime); cur = cur.AddDate(0, 0, 1) {
 		asset := &binance.HistoryAsset{
 			MarketType: q.GetMarketType(),

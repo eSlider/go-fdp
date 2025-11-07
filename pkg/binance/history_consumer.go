@@ -119,6 +119,17 @@ func (s *HistoryConsumer) List(path string) (ch chan ListResult) {
 
 var ErrNotZipLink = fmt.Errorf("not found")
 
+type CandleParquetQuery struct {
+	Market     string `validate:"required"`
+	Frame      string `validate:"required"`
+	Indicator  string `validate:"required"`
+	MarketType string `validate:"required"`
+	From       int64  `validate:"required"`
+	To         int64  `validate:"required"`
+	DataPath   string // Path to data directory
+	HivePath   string // Path to parquet files. Example: "*/*/*.parquet"
+}
+
 func (s *HistoryConsumer) DownloadAndTransform(
 	asset *HistoryAsset,
 ) (
@@ -144,84 +155,12 @@ func (s *HistoryConsumer) DownloadAndTransform(
 			return
 		}
 
-		link := asset.SymbolDateAssetZipLink()
-		parquetPath := fs.ModuleRootPath() + "/" + asset.ParquetPath()
+		link := fs.GetModuleRelativePath(asset.SymbolDateAssetZipLink())
+		parquetPath := fs.GetModuleRelativePath(asset.ParquetPath())
 
 		// If it's today, get candles from current api
 		if asset.IsToday() {
-			os.Remove(parquetPath)
-
-			// hoursCountBefore := asset.Date.Sub(todayMidnight).Hours()
-			// startTime is -1 Hour before
-			now := time.Now()
-
-			parquetWriteCh, prqErrCh := data.WriteParquet[ParquetKline](parquetPath)
-
-			// Midnight 24:00
-			startTime := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-
-			// For from midnight, +1 hour until now
-			var wg sync.WaitGroup
-			for startTime.Before(now) {
-				startTimeMc := startTime.UnixMicro()
-				startTime = startTime.Add(time.Hour)
-				endTimeMc := startTime.UnixMicro()
-
-				if endTimeMc > now.UnixMicro() {
-					endTimeMc = now.UnixMicro()
-				}
-
-				wg.Add(1)
-				go func() {
-					defer wg.Done()
-					klines, err := GetCurrentCandles(
-						&CandleRequestV3{
-							Symbol:    asset.Market,
-							Interval:  string(asset.Frame),
-							StartTime: &startTimeMc,
-							EndTime:   &endTimeMc,
-							TimeZone:  nil,
-							Limit:     60,
-						},
-					)
-					if err != nil {
-						errCh <- fmt.Errorf("error getting current candle: %v", err)
-					}
-
-					for _, kline := range klines {
-						parquet, err2 := kline.Parquet()
-						log.Printf("Kline: %s", kline)
-						if err2 != nil {
-							errCh <- fmt.Errorf("error converting csv entry to parquet: %v", err2)
-							return
-						}
-						parquetWriteCh <- parquet
-					}
-				}()
-			}
-			wg.Wait()
-
-			// Wait until a parquet writer finishes (an error channel is closed)
-			// Close the parquet channel but wait for it to finish
-			go close(parquetWriteCh)
-
-		ErrLoop:
-			for {
-				select {
-				case err, ok := <-prqErrCh:
-					if !ok {
-						break ErrLoop
-					}
-					infoCh <- &AssetETLInfo{
-						Path:   parquetPath,
-						Status: StatusError,
-						Err:    fmt.Errorf("error writing parquet: %v", err),
-					}
-				}
-			}
-
-			fmt.Printf("Finished writing today parquet:%s ", parquetPath)
-			return
+			s.WriteToday(asset, errCh, infoCh)
 		}
 
 		// Delete parquet file if it exists
@@ -460,6 +399,98 @@ func (s *HistoryConsumer) GetAsset(asset *HistoryAsset) (info chan *AssetETLInfo
 	}()
 
 	return info
+}
+
+func (s *HistoryConsumer) WriteToday(asset *HistoryAsset, errCh chan error, infoCh chan *AssetETLInfo) {
+	parquetPath := fs.GetModuleRelativePath(asset.ParquetPath())
+	os.Remove(parquetPath)
+	// Check if parquet file already exists
+	if fs.FileExists(parquetPath) && false {
+
+		path := fmt.Sprintf("%d/%d/%d.parquet", asset.Date.Year(), asset.Date.Month(), asset.Date.Day())
+
+		// Get latest entries by openTime
+		// path := fmt.Sprintf("%d/%d/%d.parquet", asset.Date.Year(), asset.Date.Month(), asset.Date.Day())
+		data.QueryParquets(s.db, `
+						SELECT open_time,
+						FROM read_parquet(
+							'%<DataPath>s/%<MarketType>s/daily/%<Indicator>s/%<Market>s/%<Frame>s/%<HivePath>s',
+							hive_partitioning=true
+						)
+						ORDER BY openTime DESC`, &CandleParquetQuery{
+			DataPath:   fs.GetModuleRelativePath("data"),
+			MarketType: string(asset.MarketType),
+			Indicator:  string(asset.Indicator),
+			Market:     asset.Market,
+			Frame:      string(asset.Frame),
+			HivePath:   path,
+		})
+
+	}
+
+	// hoursCountBefore := asset.Date.Sub(todayMidnight).Hours()
+	// startTime is -1 Hour before
+	now := time.Now()
+
+	parquetWriteCh, prqErrCh := data.WriteParquet[ParquetKline](parquetPath)
+
+	// Midnight 24:00
+	startTime := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+
+	// For from midnight, +1 hour until now
+	var wg sync.WaitGroup
+	for startTime.Before(now) {
+		startTimeMc := startTime.UnixMicro()
+		startTime = startTime.Add(time.Hour)
+		endTimeMc := startTime.UnixMicro()
+
+		if endTimeMc > now.UnixMicro() {
+			endTimeMc = now.UnixMicro()
+		}
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			klines, err := GetCurrentCandles(
+				&CandleRequestV3{
+					Symbol:    asset.Market,
+					Interval:  string(asset.Frame),
+					StartTime: &startTimeMc,
+					EndTime:   &endTimeMc,
+					TimeZone:  nil,
+					Limit:     60,
+				},
+			)
+			if err != nil {
+				errCh <- fmt.Errorf("error getting current candle: %v", err)
+			}
+
+			for _, kline := range klines {
+				parquet, err2 := kline.Parquet()
+				log.Printf("Kline: %s", kline)
+				if err2 != nil {
+					errCh <- fmt.Errorf("error converting csv entry to parquet: %v", err2)
+					return
+				}
+				parquetWriteCh <- parquet
+			}
+		}()
+	}
+	wg.Wait()
+
+	// Wait until a parquet writer finishes (an error channel is closed)
+	// Close the parquet channel but wait for it to finish
+	close(parquetWriteCh)
+	for err := range prqErrCh {
+		infoCh <- &AssetETLInfo{
+			Path:   parquetPath,
+			Status: StatusError,
+			Err:    fmt.Errorf("error writing parquet: %v", err),
+		}
+	}
+
+	fmt.Printf("Finished writing today parquet:%s ", parquetPath)
+	return
 }
 
 func NewHistoryConsumer(ctx context.Context) (*HistoryConsumer, error) {
