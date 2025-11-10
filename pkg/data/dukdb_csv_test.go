@@ -37,8 +37,13 @@ Charlie,35,Chicago`)
 		results = append(results, row.Value)
 	}
 
+	if len(results) != 3 {
+		t.Errorf("expected 3 results, got %d", len(results))
+	}
+
 	// Rewind csvData
 	csvData.Seek(0, 0)
+	results = []*Person{}
 
 	// Read CSV and write to parquet
 	resCh, errCh := ReadHeaderlessCSVChan[Person](csvData)
@@ -58,9 +63,14 @@ CSVLoop:
 			break CSVLoop
 		}
 	}
+	if len(results) != 3 {
+		t.Errorf("expected 3 results, got %d", len(results))
+	}
 
 	// Rewind csvData
 	csvData.Seek(0, 0)
+	results = []*Person{}
+
 	// Read CSV and write to parquet
 	var closed bool
 	for resCh, errCh := ReadHeaderlessCSVChan[Person](csvData); true; closed = false {
@@ -82,6 +92,10 @@ CSVLoop:
 		if closed {
 			break
 		}
+	}
+
+	if len(results) != 3 {
+		t.Errorf("expected 3 results, got %d", len(results))
 	}
 
 	// Register the buffer as a virtual file
