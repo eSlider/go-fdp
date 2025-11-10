@@ -34,15 +34,15 @@ func TestDuckDBParquetReading(t *testing.T) {
 			FROM read_parquet('%s')
 		`
 
-		sprintf := fmt.Sprintf(query, parquetPath)
-		rowCh, err := data.QueryDuckDb(sprintf)
-		if err != nil {
-			t.Fatalf("failed to read klines parquet: %v", err)
+		var results []any
+		for row := range data.QueryDuckDb(fmt.Sprintf(query, parquetPath)) {
+			if row.Error != nil {
+				t.Fatalf("failed to read klines parquet: %v", row.Error)
+			}
+			results = append(results, row.Data)
 		}
 
-		for row := range rowCh {
-			fmt.Println(row)
-		}
+		fmt.Sprintf("finished reading klines parquet")
 
 	})
 	t.Run("reads klines parquet file directly", func(t *testing.T) {

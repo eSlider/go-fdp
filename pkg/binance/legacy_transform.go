@@ -199,7 +199,7 @@ func TransformAggTradesToParquet(csvBuffer *data.Buffer, parquetFilePath string)
 	if err == nil {
 		fmt.Printf("Transformation complete. Rows written: %d\n", count)
 	} else {
-		fmt.Printf("Transformation complete. (Row count unavailable: %v)\n", err)
+		fmt.Printf("Transformation complete. (DuckDbRow count unavailable: %v)\n", err)
 	}
 	return nil
 }
@@ -232,7 +232,7 @@ func TransformTradesToParquet(csvBuffer *data.Buffer, parquetFilePath string) er
 
 	var count int
 	if err = db.QueryRow(fmt.Sprintf(`SELECT COUNT(*) FROM read_parquet('%s')`, parquetFilePath)).Scan(&count); err != nil {
-		return fmt.Errorf("Transformation complete. (Row count unavailable: %v)\n", err)
+		return fmt.Errorf("Transformation complete. (DuckDbRow count unavailable: %v)\n", err)
 	}
 
 	fmt.Printf("Transformation complete. Rows written: %d\n", count)
@@ -281,7 +281,7 @@ func TransformKlinesToParquet(csvFilePath *data.Buffer, parquetFilePath, interva
 	if err == nil {
 		fmt.Printf("Transformation complete. Rows written: %d\n", count)
 	} else {
-		fmt.Printf("Transformation complete. (Row count unavailable: %v)\n", err)
+		fmt.Printf("Transformation complete. (DuckDbRow count unavailable: %v)\n", err)
 	}
 	fmt.Printf("[Transform] Finished in %s\n", elapsed)
 	return nil
