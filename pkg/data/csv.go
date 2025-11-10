@@ -22,14 +22,12 @@ func ReadHeaderlessCSV[T any](reader io.Reader) (ch chan struct {
 
 	go func() {
 		defer close(ch)
-		from := csv.NewReader(reader)
 
-		for {
-			t := new(T)
+		for from := csv.NewReader(reader); true; {
 			data := struct {
 				Value *T
 				Error error
-			}{t, nil}
+			}{new(T), nil}
 
 			record, err := from.Read()
 			if err != nil {
@@ -39,49 +37,8 @@ func ReadHeaderlessCSV[T any](reader io.Reader) (ch chan struct {
 				}
 				return
 			}
-			// Set field value based on type
-			of := reflect.ValueOf(t)
-			el := of.Elem()
-			typ := el.Type()
-
-			// Map CSV columns to struct fields
-			for i := 0; i < typ.NumField(); i++ {
-				field := typ.Field(i)
-				csvTag := field.Tag.Get("csv")
-
-				if csvTag == "-" {
-					continue // Skip fields market as it's not used'
-				}
-
-				var colIdx int
-				if csvTag == "" {
-					colIdx = i
-				} else {
-					// Parse csv tag as column index
-					colIdx, err = strconv.Atoi(csvTag)
-					if err != nil {
-						data.Error = fmt.Errorf("invalid csv tag %q on field %s: %w", csvTag, field.Name, err)
-						ch <- data
-						return
-					}
-				}
-
-				if colIdx >= len(record) {
-					continue // Skip missing columns
-				}
-
-				value := record[colIdx]
-				if value == "" {
-					continue // Skip empty values
-				}
-
-				err := SetStructField(el.Field(i), value)
-				if err != nil {
-					data.Error = err
-					ch <- data
-					return
-				}
-
+			if err = FillStruct(data.Value, record); err != nil {
+				data.Error = fmt.Errorf("failed to fill struct: %w", err)
 			}
 			// data.Value = t
 			ch <- data
@@ -134,9 +91,7 @@ func ReadHeaderlessCSVChan[T any](reader io.Reader) (ch chan *T, errCh chan erro
 		defer close(ch)
 		defer close(errCh)
 
-		from := csv.NewReader(reader)
-
-		for {
+		for from := csv.NewReader(reader); true; {
 			record, err := from.Read()
 			if err != nil {
 				if err != io.EOF {
@@ -145,51 +100,61 @@ func ReadHeaderlessCSVChan[T any](reader io.Reader) (ch chan *T, errCh chan erro
 				return
 			}
 
-			// Create a new instance of T
 			t := new(T)
-			of := reflect.ValueOf(t)
-			el := of.Elem()
-			typ := el.Type()
-
-			// Map CSV columns to struct fields
-			for i := 0; i < typ.NumField(); i++ {
-				field := typ.Field(i)
-				csvTag := field.Tag.Get("csv")
-				if csvTag == "-" {
-					continue
-				}
-
-				var colIdx int
-				if csvTag == "" {
-					colIdx = i
-				} else {
-					// Parse csv tag as column index
-					colIdx, err = strconv.Atoi(csvTag)
-					if err != nil {
-						errCh <- fmt.Errorf("invalid csv tag %q on field %s: %w", csvTag, field.Name, err)
-						return
-					}
-				}
-
-				if colIdx >= len(record) {
-					continue // Skip missing columns
-				}
-
-				value := record[colIdx]
-				if value == "" {
-					continue // Skip empty values
-				}
-
-				err := SetStructField(el.Field(i), value)
-				if err != nil {
-					errCh <- fmt.Errorf("failed to set field %s: %w", field.Name, err)
-					return
-				}
+			if err = FillStruct(t, record); err != nil {
+				errCh <- fmt.Errorf("failed to fill struct: %w", err)
+				return
 			}
-
 			ch <- t
 		}
 	}()
 
 	return ch, errCh
+}
+
+// FillStruct fills struct fields based on csv tag numbers
+func FillStruct(t any, record []string, tagNames ...string) (err error) {
+	of := reflect.ValueOf(t)
+	el := of.Elem()
+	typ := el.Type()
+
+	tagName := "csv"
+	if len(tagNames) > 0 {
+		tagName = tagNames[0]
+	}
+
+	// Map CSV columns to struct fields
+	for i := 0; i < typ.NumField(); i++ {
+		field := typ.Field(i)
+		tagEntry := field.Tag.Get(tagName)
+		if tagEntry == "-" {
+			continue
+		}
+
+		var colIdx int
+		if tagEntry == "" {
+			colIdx = i
+		} else {
+			// Parse csv tag as column index
+			colIdx, err = strconv.Atoi(tagEntry)
+			if err != nil {
+				return fmt.Errorf("invalid csv tag %q on field %s: %w", tagEntry, field.Name, err)
+			}
+		}
+
+		if colIdx >= len(record) {
+			continue // Skip missing columns
+		}
+
+		value := record[colIdx]
+		if value == "" {
+			continue // Skip empty values
+		}
+
+		if err := SetStructField(el.Field(i), value); err != nil {
+			return fmt.Errorf("failed to set field %s: %w", field.Name, err)
+		}
+	}
+
+	return nil
 }
