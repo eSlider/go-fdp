@@ -1,0 +1,74 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Launch Application",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "program": "${workspaceFolder}/main.go",
+            "env": {},
+            "args": [],
+            "showLog": true,
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Launch Application (Release)",
+            "type": "go",
+            "request": "launch",
+            "mode": "exec",
+            "program": "${workspaceFolder}/bin/sync-v3",
+            "env": {},
+            "args": [],
+            "showLog": true,
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Debug Tests",
+            "type": "go",
+            "request": "launch",
+            "mode": "test",
+            "program": "${workspaceFolder}",
+            "env": {},
+            "args": ["-test.v"],
+            "showLog": true,
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Debug Test File",
+            "type": "go",
+            "request": "launch",
+            "mode": "test",
+            "program": "${fileDirname}",
+            "env": {},
+            "args": ["-test.v"],
+            "showLog": true,
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Debug Package Tests",
+            "type": "go",
+            "request": "launch",
+            "mode": "test",
+            "program": "${workspaceFolder}/pkg/${input:packageName}",
+            "env": {},
+            "args": ["-test.v"],
+            "showLog": true,
+            "console": "integratedTerminal"
+        }
+    ],
+    "inputs": [
+        {
+            "id": "packageName",
+            "description": "Package name to debug tests for",
+            "default": "api",
+            "type": "pickString",
+            "options": [
+                "api",
+                "binance",
+                "data",
+                "fs"
+            ]
+        }
+    ]
+}

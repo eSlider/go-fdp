@@ -212,6 +212,20 @@ func (s *HistoryConsumer) DownloadAndTransform(
 				wroteKlines := 0
 
 				// Read CSV and write to parquet
+				for row := range data.ReadHeaderlessCSV[Kline](csvBuffer) {
+					if row.Error != nil {
+						errCh <- fmt.Errorf("error reading csv: %v", row.Error)
+						continue
+					}
+					parquet, err := row.Value.Parquet()
+					if err != nil {
+						errCh <- fmt.Errorf("error converting csv entry to parquet: %v", err)
+						continue
+					}
+					parquetWriteCh <- parquet
+				}
+
+				// Read CSV and write to parquet
 				go func() {
 					for {
 						select {
