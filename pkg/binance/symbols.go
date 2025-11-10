@@ -16,7 +16,6 @@ type Symbol struct {
 	Name        string `csv:"Symbol"`      //  Name maps to the JSON field "symbol".
 	Type        string `csv:"Type"`        // Type can be: crypto, fiat, stable, index, ...
 	Description string `csv:"Description"` // Description is a human-friendly name.
-	// Parent      string `json:"parent"`     // Parent is a base symbo.l Example: USDT parent is USD
 }
 
 type Market struct {

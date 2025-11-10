@@ -167,11 +167,18 @@ func TestCandlesHistorical(t *testing.T) {
 		t.Fatalf("Failed to marshal query: %v", err)
 	}
 
-	r, err := HandleServerResponse[[]*CandleResponse](QueryServer(t, http.MethodGet, "/v1/data", q))
-	// Allow the test to pass even if historical data download fails
-	if err != nil {
-		t.Logf("Historical data query failed (expected for missing data): %v", err)
+	w := QueryServer(t, http.MethodGet, "/v1/data", q)
+
+	// Check if the response is successful
+	if w.Code != http.StatusOK {
+		// For historical queries, it's expected that data might fail to download
+		t.Logf("Historical data query returned status %d (expected for missing data): %s", w.Code, w.Body.String())
 		return
+	}
+
+	r, err := HandleServerResponse[[]*CandleResponse](w)
+	if err != nil {
+		t.Fatalf("Failed to decode successful response: %v", err)
 	}
 
 	if r == nil {
@@ -236,7 +243,8 @@ func TestCandlesHistorical(t *testing.T) {
 // TestCandlesMixedRange tests querying a range that includes both today and historical data
 func TestCandlesMixedRange(t *testing.T) {
 	now := time.Now()
-	yesterday := now.AddDate(0, 0, -1)
+	// Use a date that has historical parquet data available
+	historicalDate := time.Date(2024, 6, 12, 0, 0, 0, 0, time.UTC)
 
 	q, err := (&AssetRequest{
 		Exchange:   "binance",
@@ -244,7 +252,7 @@ func TestCandlesMixedRange(t *testing.T) {
 		Frame:      binance.OneMinute,
 		Indicator:  string(binance.Klines),
 		Market:     "BTCUSDT",
-		From:       yesterday.UnixMilli(),
+		From:       historicalDate.UnixMilli(),
 		To:         now.UnixMilli(),
 	}).MarshalJSON()
 
@@ -252,11 +260,18 @@ func TestCandlesMixedRange(t *testing.T) {
 		t.Fatalf("Failed to marshal query: %v", err)
 	}
 
-	r, err := HandleServerResponse[[]*CandleResponse](QueryServer(t, http.MethodGet, "/v1/data", q))
-	// Allow the test to pass even if data fetching fails
-	if err != nil {
-		t.Logf("Mixed range query failed (expected for missing data): %v", err)
+	w := QueryServer(t, http.MethodGet, "/v1/data", q)
+
+	// Check if the response is successful
+	if w.Code != http.StatusOK {
+		// For mixed range queries, it's expected that historical data might fail to download
+		t.Logf("Mixed range query returned status %d (expected for missing historical data): %s", w.Code, w.Body.String())
 		return
+	}
+
+	r, err := HandleServerResponse[[]*CandleResponse](w)
+	if err != nil {
+		t.Fatalf("Failed to decode successful response: %v", err)
 	}
 
 	if r == nil {
@@ -383,11 +398,18 @@ func TestCandlesEmptyResponse(t *testing.T) {
 		t.Fatalf("Failed to marshal query: %v", err)
 	}
 
-	r, err := HandleServerResponse[[]*CandleResponse](QueryServer(t, http.MethodGet, "/v1/data", q))
-	// Allow the test to pass even if data fetching fails for non-existent markets
-	if err != nil {
-		t.Logf("Empty response test failed as expected for non-existent market: %v", err)
+	w := QueryServer(t, http.MethodGet, "/v1/data", q)
+
+	// Check if the response is successful
+	if w.Code != http.StatusOK {
+		// For queries with non-existent markets, it's expected that data fetching might fail
+		t.Logf("Empty response test returned status %d (expected for non-existent market): %s", w.Code, w.Body.String())
 		return
+	}
+
+	r, err := HandleServerResponse[[]*CandleResponse](w)
+	if err != nil {
+		t.Fatalf("Failed to decode successful response: %v", err)
 	}
 
 	if r == nil {

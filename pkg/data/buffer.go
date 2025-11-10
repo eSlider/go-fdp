@@ -111,6 +111,11 @@ func (b *Buffer) Persist(path string) (err error) {
 	return
 }
 
+// Decompress buffers content if it's compressed'
+func (b *Buffer) Decompress() (out *Buffer, err error) {
+	return Decompress(b.Bytes())
+}
+
 // ReadIntoBuffer reads the content of a file into a Buffer
 func ReadIntoBuffer(path string) (buf *Buffer, err error) {
 	// ReadCSV existing file

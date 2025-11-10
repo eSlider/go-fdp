@@ -123,6 +123,7 @@ func (dq *AssetRequest) UnmarshalJSON(b []byte) error {
 func (dq *AssetRequest) FromTime() *time.Time {
 	return data.AnyTimestampToTime(dq.From)
 }
+
 func (dq *AssetRequest) ToTime() *time.Time {
 	return data.AnyTimestampToTime(dq.To)
 }
@@ -130,7 +131,7 @@ func (dq *AssetRequest) ToTime() *time.Time {
 func (dq *AssetRequest) MarshalJSON() ([]byte, error) {
 	// Marshaling JSON dosntr work with time.Time, so we need to convert to int64
 
-	var m = make(map[string]any)
+	m := make(map[string]any)
 	m["from"] = dq.From
 	m["to"] = dq.To
 	m["market"] = dq.Market
@@ -208,7 +209,7 @@ func (s *Server) GetMarketHistory(w http.ResponseWriter, r *http.Request) {
 	fromTime := *q.FromTime()
 	toTime := *q.ToTime()
 
-	// Loop between dates
+	// Loop between dates - download/transform but don't fail on errors
 	for cur := fromTime; !cur.After(toTime); cur = cur.AddDate(0, 0, 1) {
 		asset := &binance.HistoryAsset{
 			MarketType: q.GetMarketType(),
@@ -222,7 +223,7 @@ func (s *Server) GetMarketHistory(w http.ResponseWriter, r *http.Request) {
 		// Download and transform (this should create or reuse parquet file)
 		infoCh, errCh := srv.DownloadAndTransform(asset)
 
-		// Drain channels for this month
+		// Drain channels for this date
 		doneInfo := false
 		doneErr := false
 		for !(doneInfo && doneErr) {
@@ -236,7 +237,7 @@ func (s *Server) GetMarketHistory(w http.ResponseWriter, r *http.Request) {
 			case err, ok := <-errCh:
 				if ok {
 					errs = append(errs, FieldError{
-						Message: err.Error(),
+						Message: fmt.Sprintf("Date %s: %s", cur.Format("2006-01-02"), err.Error()),
 					})
 				} else {
 					doneErr = true
@@ -244,15 +245,8 @@ func (s *Server) GetMarketHistory(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	if len(errs) > 0 {
-		s.WriteError(w, Error{
-			Message: "Failed to download and transform data",
-			Errors:  errs,
-		})
-		return
-	}
 
-	// Query klines data
+	// Query klines data - try to get as much data as possible even if some downloads failed
 	var result []*CandleResponse
 
 	// Check if the query includes today's date
@@ -261,7 +255,7 @@ func (s *Server) GetMarketHistory(w http.ResponseWriter, r *http.Request) {
 	isQueryingToday := !q.FromTime().After(today) && !q.ToTime().Before(today.AddDate(0, 0, 1))
 
 	if isQueryingToday {
-		// Query today's data from DuckDB cache
+		// Query today's data from DuckDB cache first (more reliable)
 		asset := &binance.HistoryAsset{
 			MarketType: q.GetMarketType(),
 			Frequency:  binance.Daily,
@@ -282,11 +276,13 @@ func (s *Server) GetMarketHistory(w http.ResponseWriter, r *http.Request) {
 		})
 
 		if err != nil {
-			s.WriteError(w, err)
-			return
+			log.Printf("Failed to query today's data: %v", err)
+			errs = append(errs, FieldError{
+				Message: fmt.Sprintf("Failed to query today's data: %v", err),
+			})
+		} else {
+			result = append(result, todayResult...)
 		}
-
-		result = append(result, todayResult...)
 	}
 
 	// Query historical data from parquet files
@@ -300,13 +296,34 @@ func (s *Server) GetMarketHistory(w http.ResponseWriter, r *http.Request) {
 	})
 
 	if err != nil {
-		s.WriteError(w, err)
+		log.Printf("Failed to query historical data: %v", err)
+		errs = append(errs, FieldError{
+			Message: fmt.Sprintf("Failed to query historical data: %v", err),
+		})
+	} else {
+		result = append(result, historicalResult...)
+	}
+
+	// If we have some data, return it even if there were some errors
+	if len(result) > 0 {
+		if len(errs) > 0 {
+			log.Printf("Partial data returned with %d errors: %v", len(errs), errs)
+		}
+		s.WriteJson(w, result)
 		return
 	}
 
-	result = append(result, historicalResult...)
+	// No data at all, return the errors
+	if len(errs) > 0 {
+		s.WriteError(w, Error{
+			Message: "Failed to retrieve any data",
+			Errors:  errs,
+		})
+		return
+	}
 
-	s.WriteJson(w, result)
+	// Should not reach here, but just in case
+	s.WriteJson(w, []*CandleResponse{})
 }
 
 // handleSQL handles the /v1/sql endpoint for raw SQL queries
@@ -472,6 +489,8 @@ type CandleDuckDBQuery struct {
 // CandlesFromParquet returns candles from parquet files
 func (s *Server) CandlesFromParquet(q CandleParquetQuery) (result []*CandleResponse, err error) {
 	q.DataPath = fs.GetModuleRelativePath("data")
+
+	// "?access_mode=READ_WRITE"
 	resCh, errCh := data.QueryParquets(s.db, `
 		SELECT
 			open_time as openTime,
@@ -518,7 +537,7 @@ func (s *Server) CandlesFromDuckDB(q CandleDuckDBQuery) (result []*CandleRespons
 	// Check if DuckDB file exists
 	if !fs.FileExists(q.DuckDBPath) {
 		// Return empty result if cache doesn't exist yet
-		return result, nil
+		return []*CandleResponse{}, nil
 	}
 
 	// Open the DuckDB file

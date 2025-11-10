@@ -2,8 +2,10 @@ package api
 
 import (
 	"database/sql"
+	"fmt"
 	"os"
 	"sync-v3/pkg/binance"
+	"sync-v3/pkg/data"
 	"sync-v3/pkg/fs"
 	"testing"
 	"time"
@@ -12,6 +14,37 @@ import (
 )
 
 func TestDuckDBParquetReading(t *testing.T) {
+	t.Run("reads klines by date file directly", func(t *testing.T) {
+		// Open DuckDB connection (same as handler)
+		db, err := sql.Open("duckdb", "")
+		if err != nil {
+			t.Fatalf("failed to open duckdb: %v", err)
+		}
+		defer db.Close()
+
+		// Get absolute path to parquet file
+		parquetPath := fs.GetModuleRelativePath("data/spot/daily/klines/ZECUSDT/1m/*/*/*.parquet")
+
+		// Test reading a specific klines parquet file (same pattern as handler)
+		query := `SELECT
+			-- replace(split(filename,'/')[4],'.parquet','')::uint8 as day,
+			-- split(filename,'/')[3]::uint8 as month,
+			-- split(filename, '/')[2]::uint16 AS year
+			filename
+			FROM read_parquet('%s')
+		`
+
+		sprintf := fmt.Sprintf(query, parquetPath)
+		rowCh, err := data.QueryDuckDb(sprintf)
+		if err != nil {
+			t.Fatalf("failed to read klines parquet: %v", err)
+		}
+
+		for row := range rowCh {
+			fmt.Println(row)
+		}
+
+	})
 	t.Run("reads klines parquet file directly", func(t *testing.T) {
 		// Open DuckDB connection (same as handler)
 		db, err := sql.Open("duckdb", "")
