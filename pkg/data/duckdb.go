@@ -13,16 +13,21 @@ type DuckDbRow struct {
 }
 
 // QueryDuckDb queries DuckDB and returns the number of rows.
-func QueryDuckDb(query string) (rowCh chan *DuckDbRow) {
+func QueryDuckDb(query string, connections ...*sql.DB) (rowCh chan *DuckDbRow) {
 	rowCh = make(chan *DuckDbRow)
 
 	go func() {
-		db, err := sql.Open("duckdb", "")
-		if err != nil {
-			rowCh <- &DuckDbRow{Error: fmt.Errorf("failed to open DuckDB: %v", err)}
-			return
+		var db *sql.DB
+		if len(connections) > 0 {
+			db = connections[0]
+		} else {
+			db, err := sql.Open("duckdb", "")
+			if err != nil {
+				rowCh <- &DuckDbRow{Error: fmt.Errorf("failed to open DuckDB: %v", err)}
+				return
+			}
+			defer db.Close()
 		}
-		defer db.Close()
 
 		rows, err := db.Query(query)
 		if err != nil {

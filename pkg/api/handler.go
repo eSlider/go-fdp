@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"reflect"
+	"strconv"
 	"sync-v3/pkg/binance"
 	"sync-v3/pkg/data"
 	"sync-v3/pkg/fs"
@@ -220,6 +222,8 @@ func (s *Server) GetMarketHistory(w http.ResponseWriter, r *http.Request) {
 			Market:     q.Market,
 		}
 
+		asset.IsToday()
+
 		// Download and transform (this should create or reuse parquet file)
 		infoCh, errCh := srv.DownloadAndTransform(asset)
 
@@ -250,20 +254,20 @@ func (s *Server) GetMarketHistory(w http.ResponseWriter, r *http.Request) {
 	var result []*CandleResponse
 
 	// Check if the query includes today's date
-	now := time.Now()
-	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-	isQueryingToday := !q.FromTime().After(today) && !q.ToTime().Before(today.AddDate(0, 0, 1))
+	// midnightToday := time.Now().UTC().Truncate(24 * time.Hour)
+	// isQueryingToday := q.FromTime().Before(midnightToday) && q.ToTime().After(midnightToday)
 
-	if isQueryingToday {
+	asset := &binance.HistoryAsset{
+		MarketType: q.GetMarketType(),
+		Frequency:  binance.Daily,
+		Frame:      q.GetFrame(),
+		Indicator:  binance.Klines,
+		Date:       *q.FromTime(),
+		Market:     q.Market,
+	}
+
+	if asset.IsToday() {
 		// Query today's data from DuckDB cache first (more reliable)
-		asset := &binance.HistoryAsset{
-			MarketType: q.GetMarketType(),
-			Frequency:  binance.Daily,
-			Frame:      q.GetFrame(),
-			Indicator:  binance.Klines,
-			Date:       today,
-			Market:     q.Market,
-		}
 
 		todayResult, err := s.CandlesFromDuckDB(CandleDuckDBQuery{
 			Market:     q.Market,
@@ -540,8 +544,8 @@ func (s *Server) CandlesFromDuckDB(q CandleDuckDBQuery) (result []*CandleRespons
 		return []*CandleResponse{}, nil
 	}
 
-	// Open the DuckDB file
-	db, err := sql.Open("duckdb", q.DuckDBPath)
+	// Open the DuckDB file read only
+	db, err := sql.Open("duckdb", q.DuckDBPath+"?access_mode=READ_WRITE")
 	if err != nil {
 		return nil, fmt.Errorf("failed to open DuckDB file: %w", err)
 	}
@@ -558,34 +562,31 @@ func (s *Server) CandlesFromDuckDB(q CandleDuckDBQuery) (result []*CandleRespons
 			close_price as close,
 			volume as volume
 		FROM klines
-		WHERE open_time >= ? AND close_time <= ?
+		WHERE open_time >= %d AND close_time <=%d
 		ORDER BY close_time DESC`
+	// Build a decoder with the hook
 
-	rows, err := db.Query(query, q.From*1000, q.To*1000) // Convert to microseconds
-	if err != nil {
-		return nil, fmt.Errorf("failed to query DuckDB: %w", err)
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var candle CandleResponse
-		err := rows.Scan(
-			&candle.OpenTime,
-			&candle.CloseTime,
-			&candle.Open,
-			&candle.High,
-			&candle.Low,
-			&candle.Close,
-			&candle.Volume,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to scan row: %w", err)
+	for row := range data.QueryDuckDb(fmt.Sprintf(query, q.From*1000, q.To*1000), db) {
+		if row.Error != nil {
+			return nil, fmt.Errorf("failed to query DuckDB: %w", row.Error)
 		}
-		result = append(result, &candle)
-	}
+		candle := new(CandleResponse)
+		decoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
+			DecodeHook: DecodeCandleResponseHook(),
+			Result:     candle,
+			// TagName:    "mapstructure",
+		})
 
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating rows: %w", err)
+		if err != nil {
+			log.Fatalf("new decoder: %v", err)
+		}
+
+		if err := decoder.Decode(row.Data); err != nil {
+			log.Fatalf("decode: %v", err)
+		}
+
+		result = append(result, candle)
+
 	}
 
 	return result, nil
@@ -645,4 +646,22 @@ type CandleResponse struct {
 	Low       float64           `json:"low"`
 	Close     float64           `json:"close"`
 	Volume    float64           `json:"volume"`
+}
+
+// DecodeCandleResponseHook decodes the candle response from string to the correct type
+func DecodeCandleResponseHook() mapstructure.DecodeHookFuncType {
+	return func(
+		f reflect.Type, // type of the source value (e.g. string)
+		t reflect.Type, // type of the target field (e.g. time.Time)
+		d any, // the actual value (the string)
+	) (any, error) {
+		switch t.String() {
+		case "data.ResponseDate":
+			val, err := strconv.ParseInt(d.(string), 10, 64)
+			return data.ResponseDate(*data.AnyTimestampToTime(val)), err
+		case "float64":
+			return strconv.ParseFloat(d.(string), 64)
+		}
+		return d, nil
+	}
 }
