@@ -26,7 +26,7 @@ var (
 	ErrWriteFile  = errors.New("failed to write file")
 )
 
-// WriteParquet writes records to parquet file
+// WriteParquet writes records to a parquet file
 func WriteParquet[T any](
 	path string,
 ) (
@@ -88,7 +88,7 @@ func WriteParquet[T any](
 		}
 
 		close(errCh)
-		fmt.Printf("Finished writing parquet:%s ", path)
+		// fmt.Printf("Finished writing parquet:%s ", path)
 	}()
 	return
 }
@@ -102,6 +102,7 @@ func ReadParquet[T any](
 ) {
 	rCh = make(chan *T)
 	errCh = make(chan error)
+	obj := new(T)
 
 	go func() {
 		defer close(rCh)
@@ -122,7 +123,7 @@ func ReadParquet[T any](
 		defer fr.Close()
 
 		// Create parquet reader
-		pr, err := reader.NewParquetReader(fr, new(T), 4)
+		pr, err := reader.NewParquetReader(fr, obj, 4)
 		if err != nil {
 			errCh <- fmt.Errorf("can't create parquet reader: %v", err)
 			return

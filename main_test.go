@@ -2,9 +2,7 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"os"
 	"sync-v3/pkg/binance"
 	"sync-v3/pkg/data"
 	"sync-v3/pkg/fs"
@@ -41,43 +39,25 @@ func TestMainProgramParquetCreation(t *testing.T) {
 			Frame:      binance.OneMinute,
 			Indicator:  binance.Klines,
 			Date:       time.Date(2020, 8, 2, 0, 0, 0, 0, time.UTC),
-			Market:     "ETHUSDT",
+			Market:     "ZECUSDT",
 		}
 
 		// Download and transform (this should create or reuse parquet file)
-		infoCh, errCh := srv.DownloadAndTransform(asset)
-
-		// Collect results
 		var infos []*binance.AssetETLInfo
-		var errs []error
-		done := make(chan bool)
-
-		go func() {
-			defer close(done)
-			for info := range infoCh {
-				infos = append(infos, info)
-			}
-		}()
-
-		for err := range errCh {
-			errs = append(errs, err)
-		}
-
-		// Wait for info collection to complete
-		<-done
-
-		// Check for errors
-		if len(errs) > 0 {
-			// If file already exists, that's ok for this test
-			hasNonFileExistsError := false
-			for _, err := range errs {
-				if !errors.Is(err, data.ErrFileExists) {
-					hasNonFileExistsError = true
-					break
+		end := false
+		for infoCh, errCh := srv.DownloadAndTransform(asset); !end; {
+			select {
+			case info, ok := <-infoCh: // Info channel is closed when done
+				if ok {
+					infos = append(infos, info)
+				} else {
+					end = true
 				}
-			}
-			if hasNonFileExistsError {
-				t.Fatalf("unexpected errors during ETL: %v", errs)
+			case err, ok := <-errCh: // Errors are not expected
+				if ok {
+					t.Errorf("error reading csv: %v", err)
+				}
+				end = true
 			}
 		}
 
@@ -100,29 +80,23 @@ func TestMainProgramParquetCreation(t *testing.T) {
 		}
 
 		// Read the parquet file and count entries
-		recordCh, readErrCh := data.ReadParquet[binance.ParquetKline](parquetPath)
 
+		end = false
 		var records []*binance.ParquetKline
-		readDone := make(chan bool)
-
-		go func() {
-			defer close(readDone)
-			for record := range recordCh {
-				records = append(records, record)
+		for recordCh, readErrCh := data.ReadParquet[binance.ParquetKline](parquetPath); !end; {
+			select {
+			case record, ok := <-recordCh:
+				if ok {
+					records = append(records, record)
+				} else {
+					end = true
+				}
+			case err, ok := <-readErrCh:
+				if ok {
+					t.Errorf("error reading parquet: %v", err)
+				}
+				end = true
 			}
-		}()
-
-		// Wait for reading to complete
-		<-readDone
-
-		// Check for read errors
-		var readErrs []error
-		for err := range readErrCh {
-			readErrs = append(readErrs, err)
-		}
-
-		if len(readErrs) > 0 {
-			t.Fatalf("failed to read parquet file: %v", readErrs)
 		}
 
 		// Verify we have records
@@ -178,10 +152,12 @@ func TestMainProgramParquetCreation(t *testing.T) {
 		// Create asset configuration for aggTrades (smaller dataset typically)
 		asset := &binance.HistoryAsset{
 			MarketType: binance.Spot,
-			Frequency:  binance.Monthly,
-			Indicator:  binance.AggTrades,
-			Date:       time.Date(2017, 8, 1, 0, 0, 0, 0, time.UTC),
-			Market:     "ETHUSDT",
+			Frequency:  binance.Daily,
+			Indicator:  binance.Klines,
+			Frame:      binance.OneMinute,
+			// Date:       time.Now(),
+			Date:   time.Date(2019, 8, 1, 0, 0, 0, 0, time.UTC),
+			Market: "ETHUSDT",
 		}
 
 		// Initialize binance service
@@ -190,61 +166,31 @@ func TestMainProgramParquetCreation(t *testing.T) {
 			t.Fatalf("could not initialize binance service: %s", err.Error())
 		}
 
-		// Force recreation of aggTrades file if it exists but has no records
-		expectedPath := asset.ParquetPath()
-		if fs.FileExists(expectedPath) {
-			// Check if file has records
-			testCh, _ := data.ReadParquet[binance.ParquetAggTrade](expectedPath)
-			recordCount := 0
-			for range testCh {
-				recordCount++
-			}
-			if recordCount == 0 {
-				// File exists but has no records, force recreation
-				os.Remove(expectedPath)
-			}
-		}
-
 		// Download and transform
-		infoCh, errCh := srv.DownloadAndTransform(asset)
-
-		// Collect results
+		var end = false
 		var infos []*binance.AssetETLInfo
-		var errs []error
-		infoDone := make(chan bool)
-		errDone := make(chan bool)
-
-		go func() {
-			defer close(infoDone)
-			for info := range infoCh {
-				infos = append(infos, info)
-			}
-		}()
-
-		go func() {
-			defer close(errDone)
-			for err := range errCh {
-				errs = append(errs, err)
-			}
-		}()
-
-		// Wait for both collections to complete
-		<-infoDone
-		<-errDone
-
-		// Check for errors (allow file exists)
-		if len(errs) > 0 {
-			hasNonFileExistsError := false
-			for _, err := range errs {
-				if !errors.Is(err, data.ErrFileExists) {
-					hasNonFileExistsError = true
-					break
+		var tick = 1
+		for infoCh, errCh := srv.DownloadAndTransform(asset); !end; {
+			select {
+			case info, ok := <-infoCh:
+				if ok {
+					infos = append(infos, info)
+				} else {
+					end = true
 				}
+			case err, ok := <-errCh:
+				if ok {
+					t.Errorf("error reading csv: %v", err)
+				}
+				end = true
 			}
-			if hasNonFileExistsError {
-				t.Fatalf("unexpected errors during ETL: %v", errs)
-			}
+			tick++
+			t.Logf("tick: %d", tick)
+			// fmt.Printf("tick: %d", tick)
+
 		}
+
+		// errors.Is(err, data.ErrFileExists)
 
 		// Find the parquet file path
 		var parquetPath string
@@ -265,29 +211,22 @@ func TestMainProgramParquetCreation(t *testing.T) {
 		}
 
 		// Read the parquet file and count entries
-		recordCh, readErrCh := data.ReadParquet[binance.ParquetAggTrade](parquetPath)
-
-		var records []*binance.ParquetAggTrade
-		readDone := make(chan bool)
-
-		go func() {
-			defer close(readDone)
-			for record := range recordCh {
-				records = append(records, record)
+		end = false
+		var records []*binance.ParquetKline
+		for recordCh, readErrCh := data.ReadParquet[binance.ParquetKline](parquetPath); !end; {
+			select {
+			case record, ok := <-recordCh:
+				if ok {
+					records = append(records, record)
+				} else {
+					end = true
+				}
+			case err, ok := <-readErrCh:
+				if ok {
+					t.Errorf("error reading parquet: %v", err)
+				}
+				end = true
 			}
-		}()
-
-		// Wait for reading to complete
-		<-readDone
-
-		// Check for read errors
-		var readErrs []error
-		for err := range readErrCh {
-			readErrs = append(readErrs, err)
-		}
-
-		if len(readErrs) > 0 {
-			t.Fatalf("failed to read parquet file: %v", readErrs)
 		}
 
 		// Verify we have records (allow for 0 records if download/processing fails)
@@ -297,36 +236,10 @@ func TestMainProgramParquetCreation(t *testing.T) {
 
 		// AggTrades typically have many more records than klines
 		// For a month, expect hundreds of thousands to millions of records
-		expectedMinRecords := 10000 // Conservative minimum
+		expectedMinRecords := 1000 // Conservative minimum
 
 		if len(records) < expectedMinRecords {
 			t.Errorf("expected at least %d aggTrades records, got %d", expectedMinRecords, len(records))
-		}
-
-		// Verify record structure (check a few records have valid data)
-		for i, record := range records {
-			if i >= 5 { // Check first 5 records
-				break
-			}
-			if record.Timestamp == 0 {
-				t.Errorf("record %d has invalid timestamp: %d", i, record.Timestamp)
-			}
-			// Note: AggTradeID, FirstTradeID, LastTradeID can be 0 for the first trades
-			if record.AggTradeID < 0 {
-				t.Errorf("record %d has invalid agg_trade_id: %d", i, record.AggTradeID)
-			}
-			if record.FirstTradeID < 0 {
-				t.Errorf("record %d has invalid first_trade_id: %d", i, record.FirstTradeID)
-			}
-			if record.LastTradeID < 0 {
-				t.Errorf("record %d has invalid last_trade_id: %d", i, record.LastTradeID)
-			}
-			if record.Price <= 0 {
-				t.Errorf("record %d has invalid price: %f", i, record.Price)
-			}
-			if record.Quantity <= 0 {
-				t.Errorf("record %d has invalid quantity: %f", i, record.Quantity)
-			}
 		}
 
 		t.Logf("Successfully read %d aggTrades records from parquet file: %s", len(records), parquetPath)

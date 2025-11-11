@@ -1,6 +1,8 @@
 package binance
 
 import (
+	// "bufio"
+	// "bytes"
 	"context"
 	"database/sql"
 	"errors"
@@ -136,13 +138,6 @@ func (s *HistoryConsumer) DownloadAndTransform(
 	infoCh chan *AssetETLInfo,
 	errCh chan error,
 ) {
-	defer func() {
-		// Handle errors
-		if r := recover(); r != nil {
-			errCh <- fmt.Errorf("panic: %v", r)
-		}
-	}()
-
 	infoCh = make(chan *AssetETLInfo)
 	errCh = make(chan error)
 
@@ -150,8 +145,8 @@ func (s *HistoryConsumer) DownloadAndTransform(
 		defer close(infoCh)
 		defer close(errCh)
 
-		if !asset.IsZipLink() {
-			errCh <- errors.Join(ErrNotZipLink, fmt.Errorf("invalid asset: %s", asset))
+		if err := asset.IsHistoryLinkAvailable(); err != nil {
+			errCh <- errors.Join(ErrNotZipLink, fmt.Errorf("invalid aSSet: %s", asset))
 			return
 		}
 
@@ -212,6 +207,7 @@ func (s *HistoryConsumer) DownloadAndTransform(
 				wroteKlines := 0
 
 				// Read CSV and write to parquet
+
 				for row := range data.ReadHeaderlessCSV[Kline](csvBuffer) {
 					if row.Error != nil {
 						errCh <- fmt.Errorf("error reading csv: %v", row.Error)

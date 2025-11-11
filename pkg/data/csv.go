@@ -1,14 +1,16 @@
 package data
 
 import (
+	"bytes"
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"io"
 )
 
 // ReadHeaderlessCSV reads headerless CSV (like Binance data) and sends records to channel
 // Maps CSV columns positionally to struct fields based on csv tag numbers
-func ReadHeaderlessCSV[T any](reader io.Reader) (ch chan struct {
+func ReadHeaderlessCSV[T any](reader *Buffer) (ch chan struct {
 	Value *T
 	Error error
 }) {
@@ -20,24 +22,43 @@ func ReadHeaderlessCSV[T any](reader io.Reader) (ch chan struct {
 	go func() {
 		defer close(ch)
 
-		for from := csv.NewReader(reader); true; {
+		buf := bytes.NewReader(reader.Bytes())
+		// bufReader := bufio.NewReader(buf)
+		for from := csv.NewReader(buf); true; {
+
+			record, err := from.Read()
 			data := struct {
 				Value *T
 				Error error
-			}{new(T), nil}
+			}{new(T), err}
 
-			record, err := from.Read()
-			if err != nil {
-				if err != io.EOF {
-					data.Error = fmt.Errorf("csv read error: %w", err)
-					ch <- data
-				}
+			// Handle errors
+			switch err {
+			case nil:
+				// pass
+			case io.EOF:
 				return
+			default:
+				switch err.(type) {
+				case *csv.ParseError:
+					// Sometimes data is corrupted, we need to skip it
+					if errors.Is(err, csv.ErrFieldCount) {
+						// fmt.Printf("field count error: %v\n", err)
+						data.Error = fmt.Errorf("field count error: %v", err)
+						ch <- data
+						return
+					}
+
+					// data.Error = fmt.Errorf("csv read error: %w", err)
+				default:
+					data.Error = fmt.Errorf("csv read error: %v", err)
+					ch <- data
+					return
+				}
 			}
 			if err = FillStruct(data.Value, record); err != nil {
-				data.Error = fmt.Errorf("failed to fill struct: %w", err)
+				data.Error = fmt.Errorf("failed to fill struct: %v", err)
 			}
-			// data.Value = t
 			ch <- data
 		}
 	}()

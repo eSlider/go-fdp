@@ -264,17 +264,34 @@ func NewHistoryAssetByPath(path string) (a *HistoryAsset, err error) {
 	return
 }
 
-// IsZipLink - is a link to a concrete asset zip file
-func (q *HistoryAsset) IsZipLink() bool {
+// IsHistoryLinkAvailable - is a link to a concrete asset zip file
+func (q *HistoryAsset) IsHistoryLinkAvailable() (err error) {
 	// Market and Date are always required
-	if q.Date.IsZero() || q.Market == "" {
-		return false
+	if q.Date.IsZero() {
+		return fmt.Errorf("date is required")
 	}
+
+	// If date is today, then there is no data for today
+	if q.IsToday() {
+		return fmt.Errorf("no data for today")
+	}
+
+	if q.MarketType == "" {
+		return fmt.Errorf("market type is required")
+	}
+
+	if q.Market == "" {
+		return fmt.Errorf("market is required")
+	}
+
 	// Frame is required only for klines
 	if q.Indicator == Klines {
-		return q.Frame != ""
+		if q.Frame == "" {
+			return fmt.Errorf("frame is required for klines")
+		}
 	}
-	return true
+
+	return nil
 }
 
 // ParquetPath - returns parquet file path
@@ -309,18 +326,19 @@ func (q *HistoryAsset) TodayDuckDBPath() string {
 		q.Frame)
 }
 
-// IsToday - is a date today
+// IsToday - Check  date,s before now until midnight, handle using other api
 func (q *HistoryAsset) IsToday() bool {
-	// Check start date, if it's before now until midnight, handle using other api
-	now := time.Now().UTC()
-	todayMidnight := time.Date(
-		now.Year(), now.Month(), now.Day(),
-		0, 0, 0, 0,
-		now.Location())
+	return time.Now().UTC().Truncate(24 * time.Hour).Before(q.Date)
+
+	// now := time.Now().UTC()
+	// todayMidnight := time.Date(
+	// 	now.Year(), now.Month(), now.Day(),
+	// 	0, 0, 0, 0,
+	// 	now.Location())
 	// .Add(-1 * time.Microsecond) // -1 microsecond
 	// Check if required asset.Date is before, then yesterday midnight 24:00
-	isToday := q.Date.After(todayMidnight) || q.Date.Equal(todayMidnight)
-	return isToday
+	// isToday := q.Date.After(todayMidnight) || q.Date.Equal(todayMidnight)
+	// return isToday
 }
 
 // Transformer - interface for transforming data to several formats
