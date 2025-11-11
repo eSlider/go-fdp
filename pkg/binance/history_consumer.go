@@ -460,17 +460,21 @@ func (s *HistoryConsumer) WriteToday(asset *HistoryAsset, errCh chan error, info
 			defer wg.Done()
 
 			// Check if we already have data for this time range
-			var count int
-			checkSQL := `SELECT COUNT(*) FROM klines WHERE open_time >= ? AND open_time < ?`
-			if err := db.QueryRow(checkSQL, start, end).Scan(&count); err != nil {
+			var lastOpenTime int
+			checkSQL := `
+				SELECT open_time
+				FROM klines
+				WHERE open_time >= ? AND open_time < ?
+				ORDER BY open_time DESC
+				LIMIT 1`
+			if err := db.QueryRow(checkSQL, start, end).Scan(&lastOpenTime); err != nil {
 				errCh <- fmt.Errorf("error checking existing data: %v", err)
 				return
 			}
 
-			// If we already have data for this range, skip API call
-			if count > 0 {
-				return
-			}
+			lastOpenDate := data.AnyTimestampToTime(int64(lastOpenTime))
+			fmt.Printf("Last open time: %s\n", lastOpenDate)
+			start = lastOpenDate.UnixMicro()
 
 			// Fetch data from API
 			klines, err := GetCurrentCandles(

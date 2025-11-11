@@ -328,8 +328,8 @@ func (q *HistoryAsset) TodayDuckDBPath() string {
 
 // IsToday - Check  date,s before now until midnight, handle using other api
 func (q *HistoryAsset) IsToday() bool {
-	midnightToday := time.Now().UTC().Truncate(24 * time.Hour).Add(-1 * time.Microsecond)
-	return q.Date.After(midnightToday)
+	midnightToday := time.Now().UTC().Truncate(24 * time.Hour)
+	return q.Date.After(midnightToday) || q.Date.Equal(midnightToday)
 
 	// now := time.Now().UTC()
 	// todayMidnight := time.Date(
@@ -475,7 +475,7 @@ func (a *AggTrade) Parquet() (*ParquetAggTrade, error) {
 // Parquet - convert kline to parquet format
 func (k *Kline) Parquet() (*ParquetKline, error) {
 	if k == nil {
-		return nil, errors.New("k is nil")
+		return nil, errors.New("ParquetKline is nil")
 	}
 
 	if k.OpenTime == 0 {
