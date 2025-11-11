@@ -1,6 +1,7 @@
 package data
 
 import (
+	"bufio"
 	"database/sql"
 	"strings"
 	"testing"
@@ -27,9 +28,14 @@ Charlie,35,Chicago`)
 		City string
 	}
 
+	csvBytes, _ := bufio.NewReader(csvData).ReadBytes('\n')
+	csvBuf := &Buffer{
+		data: csvBytes,
+	}
+
 	// Read CSV and write to parquet
 	var results []*Person
-	for row := range ReadHeaderlessCSV[Person](csvData) {
+	for row := range ReadHeaderlessCSV[Person](csvBuf) {
 		if row.Error != nil {
 			t.Errorf("error reading csv: %v", row.Error)
 			continue

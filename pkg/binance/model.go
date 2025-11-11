@@ -328,7 +328,8 @@ func (q *HistoryAsset) TodayDuckDBPath() string {
 
 // IsToday - Check  date,s before now until midnight, handle using other api
 func (q *HistoryAsset) IsToday() bool {
-	return time.Now().UTC().Truncate(24 * time.Hour).Before(q.Date)
+	midnightToday := time.Now().UTC().Truncate(24 * time.Hour).Add(-1 * time.Microsecond)
+	return q.Date.After(midnightToday)
 
 	// now := time.Now().UTC()
 	// todayMidnight := time.Date(

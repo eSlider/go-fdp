@@ -145,6 +145,12 @@ func (s *HistoryConsumer) DownloadAndTransform(
 		defer close(infoCh)
 		defer close(errCh)
 
+		// If it's today, get candles from current api
+		if asset.IsToday() {
+			s.WriteToday(asset, errCh, infoCh)
+			return
+		}
+
 		if err := asset.IsHistoryLinkAvailable(); err != nil {
 			errCh <- errors.Join(ErrNotZipLink, fmt.Errorf("invalid aSSet: %s", asset))
 			return
@@ -152,12 +158,6 @@ func (s *HistoryConsumer) DownloadAndTransform(
 
 		link := fs.GetModuleRelativePath(asset.SymbolDateAssetZipLink())
 		parquetPath := fs.GetModuleRelativePath(asset.ParquetPath())
-
-		// If it's today, get candles from current api
-		if asset.IsToday() {
-			s.WriteToday(asset, errCh, infoCh)
-			return
-		}
 
 		// Delete parquet file if it exists
 		if s.recreateParquet {
