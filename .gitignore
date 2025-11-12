@@ -11,3 +11,4 @@
 *.parquet
 
 /sync-v3
+/bin/sync-v3
