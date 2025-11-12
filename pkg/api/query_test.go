@@ -244,15 +244,13 @@ func TestCandlesHistorical(t *testing.T) {
 func TestCandlesMixedRange(t *testing.T) {
 	now := time.Now()
 	// Use a date that has historical parquet data available
-	historicalDate := time.Date(2024, 6, 12, 0, 0, 0, 0, time.UTC)
-
 	q, err := (&AssetRequest{
 		Exchange:   "binance",
 		MarketType: string(binance.Spot),
 		Frame:      binance.OneMinute,
 		Indicator:  string(binance.Klines),
 		Market:     "BTCUSDT",
-		From:       historicalDate.UnixMilli(),
+		From:       time.Date(2024, 6, 12, 0, 0, 0, 0, time.UTC).UnixMilli(),
 		To:         now.UnixMilli(),
 	}).MarshalJSON()
 

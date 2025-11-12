@@ -16,10 +16,20 @@ type ETLStatus int
 
 var StatusList = []string{
 	"error",
-	"downloading",
-	"reading_zip",
-	"persisting_zip",
-	"reading_csv",
+	"zip-downloading",
+	"zip-reading",
+	"zip-persisting",
+	"zip-ready",
+
+	"csv-reading",
+	"csv-2-parquet-transforming",
+	"parquet-persisting",
+	"parquet-ready",
+	"parquet-downloading",
+	"parquet-reading",
+	"parquet-persisting",
+	"parquet-ready",
+	"parquet-downloading",
 	"transforming",
 	"reading_parquet",
 }
@@ -30,12 +40,14 @@ func (s *ETLStatus) String() any {
 
 const (
 	StatusError ETLStatus = iota
-	StatusDownloading
-	StatusReadingZip
-	StatusPersistingZip
-	StatusReadingCsv
-	StatusTransforming
-	StatusParquetDone
+	StatusZipDownloading
+	StatusZipReading
+	StatusZipPersisting
+	StatusZipReady
+	StatusCSVReading
+	StatusCSV2ParquetTransforming
+	StatusParquetPersisting
+	StatusParquetReady
 )
 
 type AssetETLInfo struct {
@@ -44,6 +56,10 @@ type AssetETLInfo struct {
 	Path   string
 	Err    error
 	Info   string
+}
+
+func (i *AssetETLInfo) Done() bool {
+	return i.Status == StatusParquetReady
 }
 
 type Frequency string
@@ -232,7 +248,6 @@ func (q *HistoryAsset) SymbolDateAssetZipLink() string {
 // NewHistoryAssetByPath parse path to asset
 // Example: - data/spot/monthly/klines/ETHUSDT/1m/ETHUSDT-1m-2023-06.zip
 func NewHistoryAssetByPath(path string) (a *HistoryAsset, err error) {
-
 	chunks := strings.Split(path, "/")
 	a = &HistoryAsset{
 		MarketType: MarketType(chunks[1]),

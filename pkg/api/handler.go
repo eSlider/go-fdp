@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"reflect"
 	"strconv"
+	"sync"
 	"sync-v3/pkg/binance"
 	"sync-v3/pkg/data"
 	"sync-v3/pkg/fs"
@@ -211,6 +212,10 @@ func (s *Server) GetMarketHistory(w http.ResponseWriter, r *http.Request) {
 	fromTime := *q.FromTime()
 	toTime := *q.ToTime()
 
+	var result []*CandleResponse
+	var wg sync.WaitGroup
+	var start = time.Now()
+
 	// Loop between dates - download/transform but don't fail on errors
 	for cur := fromTime; !cur.After(toTime); cur = cur.AddDate(0, 0, 1) {
 		asset := &binance.HistoryAsset{
@@ -222,36 +227,41 @@ func (s *Server) GetMarketHistory(w http.ResponseWriter, r *http.Request) {
 			Market:     q.Market,
 		}
 
-		asset.IsToday()
+		wg.Add(1)
+		go func(asset *binance.HistoryAsset) {
+			defer wg.Done()
+			// Download and transform (this should create or reuse parquet file)
 
-		// Download and transform (this should create or reuse parquet file)
-		infoCh, errCh := srv.DownloadAndTransform(asset)
-
-		// Drain channels for this date
-		doneInfo := false
-		doneErr := false
-		for !(doneInfo && doneErr) {
-			select {
-			case info, ok := <-infoCh:
-				if ok {
-					infos = append(infos, info)
-				} else {
-					doneInfo = true
-				}
-			case err, ok := <-errCh:
-				if ok {
-					errs = append(errs, FieldError{
-						Message: fmt.Sprintf("Date %s: %s", cur.Format("2006-01-02"), err.Error()),
-					})
-				} else {
-					doneErr = true
+			startDownloadTime := time.Now()
+			infoCh, errCh := srv.DownloadAndTransform(asset)
+			log.Printf("Time elapsed downloading and transforming %s: %v", asset.Date.Format("2006-01-02"), time.Since(startDownloadTime))
+			for done := false; !done; {
+				select {
+				case info, ok := <-infoCh:
+					if ok {
+						infos = append(infos, info)
+						// fmt.Printf("Downloaded %s\n", cur.Format("2006-01-02"))
+						// fmt.Printf("Path:%s", info.Path)
+					} else {
+						done = true
+					}
+				case err, ok := <-errCh:
+					if ok {
+						errs = append(errs, FieldError{
+							Message: fmt.Sprintf("Date %s: %s", cur.Format("2006-01-02"), err.Error()),
+						})
+					} else {
+						done = true
+					}
 				}
 			}
-		}
+
+		}(asset)
 	}
+	wg.Wait()
+	log.Printf("ETL and caching elapsed: %v", time.Since(start))
 
 	// Query klines data - try to get as much data as possible even if some downloads failed
-	var result []*CandleResponse
 
 	// Check if the query includes today's date
 	// midnightToday := time.Now().UTC().Truncate(24 * time.Hour)
@@ -514,24 +524,19 @@ hive_partitioning=true)
 	for {
 		select {
 		case err, ok := <-errCh:
-			if ok {
+			if !ok {
 				return nil, err
-			} else {
-				return result, nil
 			}
-
+			return result, nil
 		case entry, ok := <-resCh:
 			if !ok {
-				return result, nil
-			} else {
-				instance := new(CandleResponse)
-				if err := mapstructure.WeakDecode(entry, instance); err != nil {
-					return nil, err
-				}
-				result = append(result, instance)
-
+				return
 			}
-
+			instance := new(CandleResponse)
+			if err := mapstructure.WeakDecode(entry, instance); err != nil {
+				return nil, err
+			}
+			result = append(result, instance)
 		}
 	}
 }

@@ -121,7 +121,7 @@ func ReadIntoBuffer(path string) (buf *Buffer, err error) {
 	// ReadCSV existing file
 	var fc []byte
 
-	// GetAsset reader for the file
+	// GetAssets reader for the file
 	fc, err = os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read existing file: %v", err)

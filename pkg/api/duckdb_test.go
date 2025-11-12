@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"sync"
 	"sync-v3/pkg/binance"
 	"sync-v3/pkg/data"
 	"sync-v3/pkg/fs"
@@ -12,6 +13,23 @@ import (
 
 	_ "github.com/duckdb/duckdb-go/v2"
 )
+
+func TestWorkGroup(t *testing.T) {
+	worker := func(id int) {
+		fmt.Printf("Worker %d starting\n", id)
+		time.Sleep(time.Second)
+		fmt.Printf("Worker %d done\n", id)
+	}
+
+	var wg sync.WaitGroup
+	for i := 1; i <= 5; i++ {
+		wg.Go(func() {
+			worker(i)
+		})
+	}
+	wg.Wait()
+	fmt.Print("done")
+}
 
 func TestDuckDBParquetReading(t *testing.T) {
 	t.Run("reads klines by date file directly", func(t *testing.T) {

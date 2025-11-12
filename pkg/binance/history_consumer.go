@@ -8,8 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
-	"os"
+	// "log"
+	// "os"
 	"strings"
 	"sync"
 	"sync-v3/pkg/data"
@@ -152,131 +152,86 @@ func (s *HistoryConsumer) DownloadAndTransform(
 		}
 
 		if err := asset.IsHistoryLinkAvailable(); err != nil {
-			errCh <- errors.Join(ErrNotZipLink, fmt.Errorf("invalid aSSet: %s", asset))
+			errCh <- errors.Join(ErrNotZipLink, fmt.Errorf("invalid asset: %s", asset))
 			return
 		}
 
-		link := fs.GetModuleRelativePath(asset.SymbolDateAssetZipLink())
+		link := asset.SymbolDateAssetZipLink()
 		parquetPath := fs.GetModuleRelativePath(asset.ParquetPath())
 
 		// Delete parquet file if it exists
-		if s.recreateParquet {
-			os.Remove(parquetPath)
-		}
+		// if s.recreateParquet {
+		// 	os.Remove(parquetPath)
+		// }
 
 		// Check if a file already exists, then skip downloading, transforming and loading
 		if fs.FileExists(parquetPath) {
 			infoCh <- &AssetETLInfo{
 				Path:   parquetPath,
-				Status: StatusParquetDone,
+				Status: StatusParquetReady,
 				Info:   fmt.Sprintf("Parquet file already exists: %s", parquetPath),
 			}
 			return
 		}
 
 		// Download and cache zip file
-		for zipInfo := range s.CacheZip(link) {
-			if zipInfo.Err != nil {
-				errCh <- errors.Join(zipInfo.Err, fmt.Errorf("error caching zip file: %v", zipInfo.Err))
-				continue
+		zipInfo := s.CacheZip(link)
+		if zipInfo.Err != nil {
+			errCh <- errors.Join(zipInfo.Err, fmt.Errorf("error caching zip file: %v", zipInfo.Err))
+			return
+		}
+
+		if zipInfo.Status == StatusZipReady {
+			// Decompress ZIP file
+			csvBuffer, err := data.Decompress(zipInfo.Buffer.Bytes())
+			if err != nil {
+				errCh <- fmt.Errorf("error decompressing zip file: %v", err)
+				return
 			}
 
-			if zipInfo.Status == StatusReadingZip {
-				// Decompress ZIP file
-				csvBuffer, err := data.Decompress(zipInfo.Buffer.Bytes())
-				if err != nil {
-					errCh <- fmt.Errorf("error decompressing zip file: %v", err)
+			if s.storeCSV {
+				// Store CSV file parallel to ZIP
+				csvPath := fs.GetModuleRelativePath(strings.TrimSuffix(link, ".zip") + ".csv")
+				infoCh <- &AssetETLInfo{
+					Path:   csvPath,
+					Status: StatusCSVReading,
+					Buffer: csvBuffer,
+					Err:    csvBuffer.Persist(csvPath),
+				}
+			}
+
+			// asset.Indicator == AggTrades
+			// if asset.Indicator == Klines {
+			// csvReadCh, csvErrCh := data.ReadHeaderlessCSVChan[Kline](csvBuffer)
+			parquetWriteCh, prqErrCh := data.WriteParquet[ParquetKline](parquetPath)
+			wroteKlines := 0
+
+			// Read CSV and write to parquet
+			for row := range data.ReadHeaderlessCSV[Kline](csvBuffer) {
+				if row.Error != nil {
+					errCh <- fmt.Errorf("error reading csv: %v", row.Error)
 					continue
 				}
-
-				if s.storeCSV {
-					// Store CSV file parallel to ZIP
-					csvPath := strings.TrimSuffix(link, ".zip") + ".csv"
-					infoCh <- &AssetETLInfo{
-						Path:   csvPath,
-						Status: StatusReadingCsv,
-						Buffer: csvBuffer,
-						Err:    csvBuffer.Persist(csvPath),
-					}
+				parquet, err := row.Value.Parquet()
+				if err != nil {
+					errCh <- fmt.Errorf("error converting csv entry to parquet: %v", err)
+					continue
 				}
+				parquetWriteCh <- parquet
+			}
+			close(parquetWriteCh)
 
-				// asset.Indicator == AggTrades
-				// if asset.Indicator == Klines {
-				csvReadCh, csvErrCh := data.ReadHeaderlessCSVChan[Kline](csvBuffer)
-				parquetWriteCh, prqErrCh := data.WriteParquet[ParquetKline](parquetPath)
-				wroteKlines := 0
-
-				// Read CSV and write to parquet
-
-				for row := range data.ReadHeaderlessCSV[Kline](csvBuffer) {
-					if row.Error != nil {
-						errCh <- fmt.Errorf("error reading csv: %v", row.Error)
-						continue
-					}
-					parquet, err := row.Value.Parquet()
-					if err != nil {
-						errCh <- fmt.Errorf("error converting csv entry to parquet: %v", err)
-						continue
-					}
-					parquetWriteCh <- parquet
-				}
-
-				// Read CSV and write to parquet
-				go func() {
-					for {
-						select {
-						case csvEntry, ok := <-csvReadCh:
-							if !ok {
-								close(parquetWriteCh)
-								return
-							}
-
-							if csvEntry == nil {
-								panic("nil csv entry")
-							}
-
-							parquet, err2 := csvEntry.Parquet()
-							if err2 != nil {
-								errCh <- fmt.Errorf("error converting csv entry to parquet: %v", err2)
-								return
-							}
-							parquetWriteCh <- parquet
-							wroteKlines++
-						case err, ok := <-csvErrCh:
-							if ok {
-								close(parquetWriteCh)
-								return
-							}
-							close(parquetWriteCh) // Close parquet channel on CSV error
-							infoCh <- &AssetETLInfo{
-								Path:   parquetPath,
-								Status: StatusError,
-								Err:    fmt.Errorf("error reading csv: %v", err),
-							}
-							return
-						}
-					}
-				}()
-
-				// Ensure parquet writer finishes and closes file before reporting done
-				for prqErr := range prqErrCh {
-					if prqErr != nil {
-						infoCh <- &AssetETLInfo{
-							Path:   parquetPath,
-							Status: StatusError,
-							Err:    fmt.Errorf("error writing parquet: %v", prqErr),
-						}
-					}
-				}
-
-				infoCh <- &AssetETLInfo{
-					Path:   parquetPath,
-					Status: StatusParquetDone,
-					Info:   fmt.Sprintf("Wrote %d parquetKlines to parquet", wroteKlines),
-				}
+			for err := range prqErrCh {
+				errCh <- fmt.Errorf("error writing parquet: %v", err)
 			}
 
+			infoCh <- &AssetETLInfo{
+				Path:   parquetPath,
+				Status: StatusParquetReady,
+				Info:   fmt.Sprintf("Wrote %d parquetKlines to parquet", wroteKlines),
+			}
 		}
+
 	}()
 	return
 }
@@ -296,63 +251,52 @@ func (s *HistoryConsumer) Download(path string, w io.WriterAt) (n int64, err err
 }
 
 // CacheZip - download and cache zip file
-func (s *HistoryConsumer) CacheZip(path string) (info chan *AssetETLInfo) {
-	info = make(chan *AssetETLInfo)
+func (s *HistoryConsumer) CacheZip(link string) (info *AssetETLInfo) {
 	// Check if a file already locally exists
 	// ReadCSV existing file
-	go func() {
-		defer close(info)
-		// Do we cache the file?
-		if fs.FileExists(path) {
-			// Read zip
-			compressedBuf, err := data.ReadIntoBuffer(path)
-			info <- &AssetETLInfo{
-				Path:   path,
-				Status: StatusReadingZip,
-				Buffer: compressedBuf,
-				Err:    err,
-			}
+	var err error
+	path := fs.GetModuleRelativePath(link)
+	info = &AssetETLInfo{Path: path}
 
-			log.Printf("File %s already exists, loaded from disk", path)
-		} else {
-			// Download the file if it doesn't exist
-			compressedBuf := &data.Buffer{}
-			info <- &AssetETLInfo{
-				Path:   path,
-				Status: StatusDownloading,
-			}
-			_, err1 := s.Download(path, compressedBuf)
-			a := &AssetETLInfo{
-				Path:   path,
-				Status: StatusReadingZip,
-				Buffer: compressedBuf,
-				Err:    err1,
-			}
-			info <- a
+	// Do we cache the file?
+	if fs.FileExists(path) {
+		// Read zip
+		info.Status = StatusZipReading
+		if info.Buffer, err = data.ReadIntoBuffer(path); err != nil {
+			info.Err = fmt.Errorf("error reading zip file: %v", err)
+			return
+		}
+	} else {
+		// Download the file if it doesn't exist
+		info.Status = StatusZipDownloading
+		info.Buffer = &data.Buffer{}
+		if _, err1 := s.Download(link, info.Buffer); err1 != nil {
+			info.Err = fmt.Errorf("error downloading zip file: %v", err1)
+			return
+		}
 
+		go func() {
 			if s.storeZIP {
-				// Store zip file
-				info <- &AssetETLInfo{
-					Path:   path,
-					Status: StatusPersistingZip,
-					Buffer: compressedBuf,
-					Err:    compressedBuf.Persist(path),
+				// Store a downloaded file into a local directory save it as a zip file
+				// info.Persistance Status = StatusZipPersisting
+				if err := info.Buffer.Persist(path); err != nil {
+					// info.Err = fmt.Errorf("error storing zip file: %v", err)
+					fmt.Printf("error storing zip file: %v\n", err)
 				}
 			}
+		}()
+	}
 
-		}
-	}()
-
-	// Store a downloaded file into a local directory save it as a zip file
+	info.Status = StatusZipReady
 	return info
 }
 
-// GetAsset ETLBinanceHistoryAsset - download, extract, transform and load data from binance history assets
+// GetAssets ETLBinanceHistoryAsset - download, extract, transform and load data from binance history assets
 //   - If ZIP file already exists, load it from disk
 //   - If CSV file already exists, load it from disk
 //   - If a parquet file already exists, load it from disk
 //   - Check if a parquet file is empty, if so, delete it and recreate it
-func (s *HistoryConsumer) GetAsset(asset *HistoryAsset) (info chan *AssetETLInfo) {
+func (s *HistoryConsumer) GetAssets(asset *HistoryAsset) (info chan *AssetETLInfo) {
 	prefix := asset.SymbolFrameLink()
 	info = make(chan *AssetETLInfo)
 
@@ -448,17 +392,14 @@ func (s *HistoryConsumer) WriteToday(asset *HistoryAsset, errCh chan error, info
 
 	var wg sync.WaitGroup
 	for startTime.Before(now) {
-		startTimeMc := startTime.UnixMicro()
-		endTimeMc := startTime.Add(time.Hour).UnixMicro()
+		start := startTime.UnixMicro()
+		end := startTime.Add(time.Hour).UnixMicro()
 
-		if endTimeMc > now.UnixMicro() {
-			endTimeMc = now.UnixMicro()
+		if end > now.UnixMicro() {
+			end = now.UnixMicro()
 		}
 
-		wg.Add(1)
-		go func(start, end int64) {
-			defer wg.Done()
-
+		wg.Go(func() {
 			// Check if we already have data for this time range
 			var lastOpenTime int
 			checkSQL := `
@@ -473,7 +414,7 @@ func (s *HistoryConsumer) WriteToday(asset *HistoryAsset, errCh chan error, info
 			}
 
 			lastOpenDate := data.AnyTimestampToTime(int64(lastOpenTime))
-			fmt.Printf("Last open time: %s\n", lastOpenDate)
+			// fmt.Printf("Last open time: %s\n", lastOpenDate)
 			start = lastOpenDate.UnixMicro()
 
 			// Fetch data from API
@@ -511,16 +452,15 @@ func (s *HistoryConsumer) WriteToday(asset *HistoryAsset, errCh chan error, info
 					return
 				}
 			}
-		}(startTimeMc, endTimeMc)
+		})
 
 		startTime = startTime.Add(time.Hour)
 	}
-
 	wg.Wait()
 
 	infoCh <- &AssetETLInfo{
 		Path:   duckDBPath,
-		Status: StatusParquetDone, // Reusing status for completion
+		Status: StatusParquetReady, // Reusing status for completion
 		Info:   fmt.Sprintf("Cached today's klines in DuckDB: %s", duckDBPath),
 	}
 }

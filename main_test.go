@@ -64,7 +64,7 @@ func TestMainProgramParquetCreation(t *testing.T) {
 		// Find the parquet file path from the results
 		var parquetPath string
 		for _, info := range infos {
-			if info.Status == binance.StatusParquetDone {
+			if info.Status == binance.StatusParquetReady {
 				parquetPath = info.Path
 				break
 			}
@@ -195,7 +195,7 @@ func TestMainProgramParquetCreation(t *testing.T) {
 		// Find the parquet file path
 		var parquetPath string
 		for _, info := range infos {
-			if info.Status == binance.StatusParquetDone {
+			if info.Status == binance.StatusParquetReady {
 				parquetPath = info.Path
 				break
 			}
