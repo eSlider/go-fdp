@@ -507,24 +507,35 @@ func (s *Server) CandlesFromParquet(q CandleParquetQuery) (result []*CandleRespo
 	// "?access_mode=READ_WRITE"
 	resCh, errCh := data.QueryParquets(s.db, `
 		SELECT
-			open_time as openTime,
-			close_time as closeTime,
+			 make_timestamp(year, month, day,
+					date_part('hour', open_time),
+					date_part('minute', open_time),
+					date_part('second', open_time)) as openTime,
+			openTime + interval '1' minute - interval '1' millisecond AS closeTime,
+			-- mtype, indicator, market, frame,
+
 			open_price as open,
 			close_price as close,
 			high_price as high,
 			low_price as low,
+
 			volume as volume
-		FROM read_parquet('%<DataPath>s/%<MarketType>s/daily/%<Indicator>s/%<Market>s/%<Frame>s/*/*/*.parquet',
-hive_partitioning=true)
-		WHERE	open_time 	> epoch_ms(%<From>d)::TIMESTAMP
-		AND		close_time <= epoch_ms(%<To>d)::TIMESTAMP
-		ORDER BY close_time DESC
+
+		FROM read_parquet('%<DataPath>s/*/*/*/*/*/*/*/*.parquet')
+
+		WHERE mtype = '%<MarketType>s'
+			AND indicator = '%<Indicator>s'
+			AND market = '%<Market>s'
+			AND frame = '%<Frame>s'
+			AND( openTime BETWEEN epoch_ms(%<From>d) AND epoch_ms(%<To>d) )
+		ORDER BY
+			openTime DESC
 	`, q)
 
 	for {
 		select {
 		case err, ok := <-errCh:
-			if !ok {
+			if ok {
 				return nil, err
 			}
 			return result, nil

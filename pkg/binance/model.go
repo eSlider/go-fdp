@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync-v3/pkg/data"
@@ -312,23 +311,17 @@ func (q *HistoryAsset) IsHistoryLinkAvailable() (err error) {
 // ParquetPath - returns parquet file path
 //   - Create link to work with hive partitioning
 func (q *HistoryAsset) ParquetPath() string {
-	link := q.SymbolDateAssetZipLink()
-	path := strings.TrimSuffix(link, ".zip") + ".parquet"
-
-	// Replace file name(not path directories) any - with _:
-	//  - Get file name from abs path
-	fileName := filepath.Base(path)
-
-	// Remove from  "ETHUSDT-1m-2024-06-10", prefix "ETHUSDT-1m-"
-	fileName = strings.TrimLeft(fileName, q.Market+"-"+string(q.Frame)+"-")
-
-	// Replace date like "2020-07-01" with "2020/07/01" to let hive understand it as a date
-	// See https://duckdb.org/docs/stable/data/partitioning/hive_partitioning
-	fileName = strings.ReplaceAll(fileName, "-", "/")
-
-	dirName := filepath.Dir(path)
-
-	return dirName + "/" + fileName
+	dest := fmt.Sprintf(
+		"data/mtype=%s/indicator=%s/market=%s/frame=%s/year=%d/month=%d/day=%d/data.parquet",
+		q.MarketType,
+		q.Indicator,
+		q.Market,
+		q.Frame,
+		q.Date.Year(),
+		int(q.Date.Month()),
+		q.Date.Day(),
+	)
+	return dest
 }
 
 // TodayDuckDBPath - returns the path to the DuckDB file for today's cached data
