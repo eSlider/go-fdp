@@ -151,7 +151,7 @@ func TestCandlesToday(t *testing.T) {
 func TestCandlesHistorical(t *testing.T) {
 	// Use a date from the past that should have parquet data
 	historicalDate := time.Date(2025, 8, 2, 0, 0, 0, 0, time.UTC)
-	nextDay := historicalDate.AddDate(0, 3, 0)
+	nextDay := historicalDate.AddDate(0, 0, 2)
 
 	q, err := (&AssetRequest{
 		Exchange:   "binance",
