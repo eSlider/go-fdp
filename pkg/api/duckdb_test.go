@@ -3,9 +3,7 @@ package api
 import (
 	"database/sql"
 	"fmt"
-	"math/rand"
 	"os"
-	// "sync"
 	"sync-v3/pkg/binance"
 	"sync-v3/pkg/data"
 	"sync-v3/pkg/fs"
@@ -20,7 +18,7 @@ func TestWorkGroup(t *testing.T) {
 		ch := make(chan int)
 		go func() {
 			fmt.Printf("Worker %d starting\n", id)
-			time.Sleep(time.Second * time.Duration(rand.Intn(3*1e7)))
+			time.Sleep(time.Second * 1)
 			fmt.Printf("Worker %d done\n", id)
 			ch <- id
 		}()

@@ -419,16 +419,6 @@ func (k *Kline) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-type ParquetKline struct {
-	OpenTime  int64   `parquet:"name=open_time,type=INT64,convertedtype=TIMESTAMP_MICROS" json:"open_time"`
-	CloseTime int64   `parquet:"name=close_time,type=INT64, convertedtype=TIMESTAMP_MICROS" json:"close_time"`
-	Open      float64 `parquet:"name=open_price, type=DOUBLE" json:"open_price"`
-	High      float64 `parquet:"name=high_price, type=DOUBLE" json:"high_price"`
-	Low       float64 `parquet:"name=low_price, type=DOUBLE" json:"low_price"`
-	Close     float64 `parquet:"name=close_price, type=DOUBLE" json:"close_price"`
-	Volume    float64 `parquet:"name=volume, type=DOUBLE" json:"volume"`
-}
-
 // AggTrade - binance aggregated trade data
 // CSV columns order (as in Binance public data files):
 // 0: a (Aggregate tradeId)
@@ -487,6 +477,16 @@ func (a *AggTrade) Parquet() (*ParquetAggTrade, error) {
 	}, nil
 }
 
+type ParquetKline struct {
+	OpenTime int32 `parquet:"name=open_time,type=INT32, convertedtype=TIME_MILLIS" json:"open_time"`
+	// CloseTime int64   `parquet:"name=close_time,type=INT64, convertedtype=TIMESTAMP_MICROS" json:"close_time"`
+	Open   float64 `parquet:"name=open_price, type=DOUBLE" json:"open_price"`
+	High   float64 `parquet:"name=high_price, type=DOUBLE" json:"high_price"`
+	Low    float64 `parquet:"name=low_price, type=DOUBLE" json:"low_price"`
+	Close  float64 `parquet:"name=close_price, type=DOUBLE" json:"close_price"`
+	Volume float64 `parquet:"name=volume, type=DOUBLE" json:"volume"`
+}
+
 // Parquet - convert kline to parquet format
 func (k *Kline) Parquet() (*ParquetKline, error) {
 	if k == nil {
@@ -497,13 +497,21 @@ func (k *Kline) Parquet() (*ParquetKline, error) {
 		return nil, errors.New("open time is zero")
 	}
 
+	openTime := data.AnyTimestampToTime(k.OpenTime)
+	// Get time, from middle night without date(only this day milliseconds) truncated.
+	openTimeMs := int32(
+		openTime.UnixMilli() - openTime.Truncate(24*time.Hour).UnixMilli(),
+	)
+
 	return &ParquetKline{
-		OpenTime:  data.ToMicroseconds(k.OpenTime),
-		CloseTime: data.ToMicroseconds(k.CloseTime),
-		Open:      k.OpenPrice,
-		High:      k.HighPrice,
-		Low:       k.LowPrice,
-		Close:     k.ClosePrice,
-		Volume:    k.Volume,
+		OpenTime: openTimeMs,
+		// The close time should be calculated from the open time and the interval between klines.
+		// For example: 1m = 60 seconds, so the close time should be: open time + 60 seconds - 1 millisecond.
+		// CloseTime: data.ToMicroseconds(k.CloseTime),
+		Open:   k.OpenPrice,
+		High:   k.HighPrice,
+		Low:    k.LowPrice,
+		Close:  k.ClosePrice,
+		Volume: k.Volume,
 	}, nil
 }

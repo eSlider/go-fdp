@@ -150,7 +150,7 @@ func TestCandlesToday(t *testing.T) {
 // TestCandlesHistorical tests querying historical data from parquet files
 func TestCandlesHistorical(t *testing.T) {
 	// Use a date from the past that should have parquet data
-	historicalDate := time.Date(2020, 8, 2, 0, 0, 0, 0, time.UTC)
+	historicalDate := time.Date(2025, 8, 2, 0, 0, 0, 0, time.UTC)
 	nextDay := historicalDate.AddDate(0, 0, 1)
 
 	q, err := (&AssetRequest{
@@ -158,7 +158,7 @@ func TestCandlesHistorical(t *testing.T) {
 		MarketType: string(binance.Spot),
 		Frame:      binance.OneMinute,
 		Indicator:  string(binance.Klines),
-		Market:     "ETHUSDT",
+		Market:     "BTCUSDT",
 		From:       historicalDate.UnixMilli(),
 		To:         nextDay.UnixMilli(),
 	}).MarshalJSON()
