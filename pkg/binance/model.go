@@ -326,9 +326,8 @@ func (q *HistoryAsset) ParquetPath() string {
 
 // TodayDuckDBPath - returns the path to the DuckDB file for today's cached data
 func (q *HistoryAsset) TodayDuckDBPath() string {
-	return fmt.Sprintf("data/%s/%s/%s/%s/%s/today.duckdb",
+	return fmt.Sprintf("data/mtype=%s/indicator=%s/market=%s/frame=%s/today.duckdb",
 		q.MarketType,
-		q.Frequency,
 		q.Indicator,
 		q.Market,
 		q.Frame)
