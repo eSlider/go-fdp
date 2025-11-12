@@ -22,7 +22,9 @@ func ReadHeaderlessCSV[T any](reader *Buffer) (ch chan struct {
 	go func() {
 		defer close(ch)
 
-		buf := bytes.NewReader(reader.Bytes())
+		// Copy bytes to buffer
+		bts := reader.Bytes()[:]
+		buf := bytes.NewReader(bts)
 		// bufReader := bufio.NewReader(buf)
 		for from := csv.NewReader(buf); true; {
 
