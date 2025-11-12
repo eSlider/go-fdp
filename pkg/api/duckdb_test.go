@@ -3,8 +3,9 @@ package api
 import (
 	"database/sql"
 	"fmt"
+	"math/rand"
 	"os"
-	"sync"
+	// "sync"
 	"sync-v3/pkg/binance"
 	"sync-v3/pkg/data"
 	"sync-v3/pkg/fs"
@@ -15,19 +16,33 @@ import (
 )
 
 func TestWorkGroup(t *testing.T) {
-	worker := func(id int) {
-		fmt.Printf("Worker %d starting\n", id)
-		time.Sleep(time.Second)
-		fmt.Printf("Worker %d done\n", id)
+	worker := func(id int) <-chan int {
+		ch := make(chan int)
+		go func() {
+			fmt.Printf("Worker %d starting\n", id)
+			time.Sleep(time.Second * time.Duration(rand.Intn(3*1e7)))
+			fmt.Printf("Worker %d done\n", id)
+			ch <- id
+		}()
+		return ch
 	}
 
-	var wg sync.WaitGroup
-	for i := 1; i <= 5; i++ {
-		wg.Go(func() {
-			worker(i)
-		})
+	var jobsCount = 3
+	var results = make(chan int, jobsCount)
+	// var wg sync.WaitGroup
+	for i := 1; i <= jobsCount; i++ {
+		go func() {
+			ints := worker(i)
+			results <- <-ints
+		}()
 	}
-	wg.Wait()
+
+	fmt.Println("Waiting for all jobs to finish:")
+	for val := range results {
+		fmt.Printf("Get result %d\n", val)
+	}
+
+	// wg.Wait()
 	fmt.Print("done")
 }
 

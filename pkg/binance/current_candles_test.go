@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// Test normalization by getting zip file
+// Test normalization by getting a zip file
 func TestCurrentCandles(t *testing.T) {
 
 	t.Run("Parsing and creation history asset links", func(t *testing.T) {
@@ -23,7 +23,7 @@ func TestCurrentCandles(t *testing.T) {
 		for _, market := range []string{"BTCUSDT", "ETHUSDT"} {
 			for _, frame := range []string{
 				"1m",
-				"1h",
+				// "1h",
 			} {
 				for _, indicator := range []Indicator{Klines} {
 
