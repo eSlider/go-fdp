@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"reflect"
@@ -394,7 +395,10 @@ func (s *Server) Validate(dq any, r *http.Request) error {
 	// Read query parameters from request body
 	if r.Body != nil {
 		if err := json.NewDecoder(r.Body).Decode(&m); err != nil {
-			return err
+			// If EOF is returned, it means the request body is empty
+			if err != io.EOF {
+				return err
+			}
 		}
 	}
 

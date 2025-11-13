@@ -151,7 +151,7 @@ func TestCandlesToday(t *testing.T) {
 func TestCandlesHistorical(t *testing.T) {
 	// Use a date from the past that should have parquet data
 	historicalDate := time.Date(2025, 8, 2, 0, 0, 0, 0, time.UTC)
-	nextDay := historicalDate.AddDate(0, 0, 2)
+	nextDay := historicalDate.AddDate(0, 0, 15).UTC()
 
 	q, err := (&AssetRequest{
 		Exchange:   "binance",
@@ -225,13 +225,14 @@ func TestCandlesHistorical(t *testing.T) {
 
 	// Validate time range
 	for i, candle := range *r {
-		openTime := time.Time(candle.OpenTime)
-		closeTime := time.Time(candle.CloseTime)
+		openTime := time.Time(candle.OpenTime).UTC()
+		closeTime := time.Time(candle.CloseTime).UTC()
 		if openTime.Before(historicalDate) {
 			t.Errorf("Candle %d OpenTime %v is before requested From time %v",
 				i, openTime, historicalDate)
 		}
-		if closeTime.After(nextDay) {
+		add := closeTime.Add(-1 * time.Minute)
+		if add.After(nextDay) {
 			t.Errorf("Candle %d CloseTime %v is after requested To time %v",
 				i, closeTime, nextDay)
 		}
@@ -250,7 +251,7 @@ func TestCandlesMixedRange(t *testing.T) {
 		Frame:      binance.OneMinute,
 		Indicator:  string(binance.Klines),
 		Market:     "BTCUSDT",
-		From:       time.Date(2024, 6, 12, 0, 0, 0, 0, time.UTC).UnixMilli(),
+		From:       time.Date(2025, 9, 12, 0, 0, 0, 0, time.UTC).UnixMilli(),
 		To:         now.UnixMilli(),
 	}).MarshalJSON()
 

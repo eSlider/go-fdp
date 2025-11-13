@@ -1,12 +1,17 @@
 package main
 
 import (
+	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"sync-v3/pkg/api"
 )
 
 func main() {
+	port := flag.Int("port", 8082, "port to listen on")
+	flag.Parse()
+
 	// Create API server
 	server, err := api.NewServer()
 	if err != nil {
@@ -15,12 +20,12 @@ func main() {
 	defer server.Close()
 
 	// Start HTTP server
-	log.Println("Starting server on :8081")
+	log.Printf("Starting server on :%d", *port)
 	log.Println("API endpoints:")
 	log.Println("  GET  /v1/data?from={ms}&to={ms}&market={symbol}&exchange=binance&marketType=spot&frame=1m")
 	log.Println("  POST /v1/sql with JSON body: {\"query\": \"SELECT * FROM klines LIMIT 10\"}")
 
-	if err := http.ListenAndServe(":8082", server); err != nil {
+	if err := http.ListenAndServe(fmt.Sprintf(":%d", *port), server); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}
 }
