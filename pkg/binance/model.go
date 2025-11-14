@@ -68,23 +68,62 @@ const (
 	Daily             = "daily"
 )
 
-type Frame string
+type Frame time.Duration
 
 const (
-	OneSecond   Frame = "1s"
-	OneMinute         = "1m"
-	ThreeMinute       = "3m"
-	FiveMinute        = "5m"
-	FifteenMin        = "15m"
-	ThirtyMin         = "30m"
-	OneHour           = "1h"
-	TwoHour           = "2h"
-	OneDay            = "1d"
+	NoFrame     Frame = 0
+	Nanosecond  Frame = 1
+	Microsecond       = 1000 * Nanosecond
+	Millisecond       = 1000 * Microsecond
+	OneSecond         = 1000 * Millisecond
+	OneMinute         = 60 * OneSecond
+	ThreeMinute       = 3 * OneMinute
+	FiveMinute        = 5 * OneMinute
+	FifteenMin        = 15 * OneMinute
+	Hour              = 60 * OneMinute
+	TwoHour           = 2 * Hour
+	OneDay            = 24 * Hour
+	OneWeek           = 7 * OneDay
 )
+
+var Frames = map[string]Frame{
+	"1s":  OneSecond,
+	"1m":  OneMinute,
+	"3m":  ThreeMinute,
+	"5m":  FiveMinute,
+	"15m": FifteenMin,
+	"1h":  Hour,
+	"2h":  TwoHour,
+	"1d":  OneDay,
+	"1w":  OneWeek,
+}
+
+// StringToFrame - converts a string to a frame
+func StringToFrame(frame string) Frame {
+	f, ok := Frames[frame]
+	if !ok {
+		return NoFrame
+	}
+	return f
+}
+
+func FrameToString(frame Frame) string {
+	for k, v := range Frames {
+		if v == frame {
+			return k
+		}
+	}
+	return ""
+}
 
 // String - returns a frame
 func (f Frame) String() string {
-	return string(f)
+	for k, v := range Frames {
+		if v == f {
+			return k
+		}
+	}
+	return ""
 }
 
 // NewFrame - returns a frame
@@ -92,7 +131,7 @@ func NewFrame(frame string) Frame {
 	if frame == "" {
 		return OneMinute
 	}
-	return Frame(frame)
+	return StringToFrame(frame)
 }
 
 type FutureType string
@@ -190,7 +229,7 @@ func (q *HistoryAsset) SymbolLink() string {
 	if q.Frequency == "" {
 		q.Frequency = Monthly
 	}
-	if q.Frame == "" {
+	if q.Frame.String() == "" {
 		q.Frame = OneMinute
 	}
 	if q.Indicator == "" {
@@ -255,7 +294,7 @@ func NewHistoryAssetByPath(path string) (a *HistoryAsset, err error) {
 		Market:     chunks[4],
 	}
 
-	// Latest chunk is the file name
+	// The latest chunk is the file name
 	fileName := strings.TrimRight(chunks[len(chunks)-1], ".zip")
 	fileNameChunks := strings.Split(fileName, "-")
 	l := len(fileNameChunks)
@@ -272,7 +311,7 @@ func NewHistoryAssetByPath(path string) (a *HistoryAsset, err error) {
 
 	switch a.Indicator {
 	case Klines:
-		a.Frame = Frame(chunks[5])
+		a.Frame = StringToFrame(chunks[5])
 	}
 
 	return
@@ -300,7 +339,7 @@ func (q *HistoryAsset) IsHistoryLinkAvailable() (err error) {
 
 	// Frame is required only for klines
 	if q.Indicator == Klines {
-		if q.Frame == "" {
+		if q.Frame == NoFrame {
 			return fmt.Errorf("frame is required for klines")
 		}
 	}
@@ -335,18 +374,8 @@ func (q *HistoryAsset) TodayDuckDBPath() string {
 
 // IsToday - Check  date,s before now until midnight, handle using other api
 func (q *HistoryAsset) IsToday() bool {
-	midnightToday := time.Now().UTC().Truncate(24 * time.Hour)
-	return q.Date.After(midnightToday) || q.Date.Equal(midnightToday)
 
-	// now := time.Now().UTC()
-	// todayMidnight := time.Date(
-	// 	now.Year(), now.Month(), now.Day(),
-	// 	0, 0, 0, 0,
-	// 	now.Location())
-	// .Add(-1 * time.Microsecond) // -1 microsecond
-	// Check if required asset.Date is before, then yesterday midnight 24:00
-	// isToday := q.Date.After(todayMidnight) || q.Date.Equal(todayMidnight)
-	// return isToday
+	return data.IsToday(q.Date)
 }
 
 // Transformer - interface for transforming data to several formats

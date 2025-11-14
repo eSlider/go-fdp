@@ -22,6 +22,7 @@ const (
 	TimestampInMicros
 )
 
+// TypeOfTimestamp returns the type of timestamp: seconds, milliseconds or microseconds
 func TypeOfTimestamp(ts int64) TimestampType {
 	switch {
 	case ts > 1e15:
@@ -33,6 +34,10 @@ func TypeOfTimestamp(ts int64) TimestampType {
 	}
 }
 
+// AnyTimestampToTime converts variants of timestamp to time.Time:
+//   - 1: microseconds
+//   - 2: seconds
+//   - 3: milliseconds
 func AnyTimestampToTime(ts int64) *time.Time {
 	switch TypeOfTimestamp(ts) {
 	case TimestampInMicros:
@@ -46,4 +51,33 @@ func AnyTimestampToTime(ts int64) *time.Time {
 		return &milli
 	}
 	return nil
+}
+
+// IsToday checks if the given time is today
+func IsToday(t time.Time) bool {
+	// Variant 1:
+	// Check if the required asset.Date is before, then yesterday midnight 24:00
+	// midnightToday := time.Now().UTC().Truncate(24 * time.Hour)
+	// t.After(midnightToday) ||t.Equal(midnightToday)
+
+	// Variant 2:
+	// now := time.Now().UTC()
+	// todayMidnight := time.Date(
+	// 	now.Year(), now.Month(), now.Day(),
+	// 	0, 0, 0, 0,
+	// 	now.Location())
+	// .Add(-1 * time.Microsecond) // -1 microsecond
+
+	// isToday := q.Date.After(todayMidnight) || q.Date.Equal(todayMidnight)
+	// return isToday
+
+	// Variant 3:
+	// Check if required asset.Date is after now
+	today := LastMomentOfYesterday()
+	return t.After(today)
+}
+
+// LastMomentOfYesterday return's midnight.
+func LastMomentOfYesterday() time.Time {
+	return time.Now().UTC().Truncate(24 * time.Hour).Add(-1 * time.Nanosecond)
 }

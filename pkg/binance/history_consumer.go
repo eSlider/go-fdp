@@ -385,7 +385,7 @@ func (s *HistoryConsumer) WriteToday(asset *HistoryAsset, errCh chan error, info
 	}
 
 	now := time.Now()
-	todayMidnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	todayMidnight := now.Truncate(24 * time.Hour)
 
 	// Process data in hourly chunks from midnight to now
 	startTime := todayMidnight

@@ -89,7 +89,7 @@ func TestCandlesToday(t *testing.T) {
 	q, err := (&AssetRequest{
 		Exchange:   "binance",
 		MarketType: string(binance.Spot),
-		Frame:      binance.OneMinute,
+		Frame:      binance.OneMinute.String(),
 		Indicator:  string(binance.Klines),
 		Market:     "BTCUSDT",
 		From:       todayMidnight.UnixMilli(),
@@ -156,7 +156,7 @@ func TestCandlesHistorical(t *testing.T) {
 	q, err := (&AssetRequest{
 		Exchange:   "binance",
 		MarketType: string(binance.Spot),
-		Frame:      binance.OneMinute,
+		Frame:      binance.OneMinute.String(),
 		Indicator:  string(binance.Klines),
 		Market:     "BTCUSDT",
 		From:       historicalDate.UnixMilli(),
@@ -248,7 +248,7 @@ func TestCandlesMixedRange(t *testing.T) {
 	q, err := (&AssetRequest{
 		Exchange:   "binance",
 		MarketType: string(binance.Spot),
-		Frame:      binance.OneMinute,
+		Frame:      binance.OneMinute.String(),
 		Indicator:  string(binance.Klines),
 		Market:     "BTCUSDT",
 		From:       time.Date(2025, 9, 12, 0, 0, 0, 0, time.UTC).UnixMilli(),
@@ -320,7 +320,7 @@ func TestCandlesInvalidRequest(t *testing.T) {
 			request: AssetRequest{
 				Exchange:   "binance",
 				MarketType: "invalid",
-				Frame:      binance.OneMinute,
+				Frame:      binance.OneMinute.String(),
 				Indicator:  string(binance.Klines),
 				Market:     "BTCUSDT",
 				From:       time.Now().AddDate(0, 0, -1).UnixMilli(),
@@ -333,7 +333,7 @@ func TestCandlesInvalidRequest(t *testing.T) {
 			request: AssetRequest{
 				Exchange:   "binance",
 				MarketType: string(binance.Spot),
-				Frame:      binance.OneMinute,
+				Frame:      binance.OneMinute.String(),
 				Indicator:  string(binance.Klines),
 				Market:     "BTCUSDT",
 				From:       time.Now().UnixMilli(),
@@ -346,7 +346,7 @@ func TestCandlesInvalidRequest(t *testing.T) {
 			request: AssetRequest{
 				Exchange:   "binance",
 				MarketType: string(binance.Spot),
-				Frame:      binance.OneMinute,
+				Frame:      binance.OneMinute.String(),
 				Indicator:  string(binance.Klines),
 				Market:     "",
 				From:       time.Now().AddDate(0, 0, -1).UnixMilli(),
@@ -386,7 +386,7 @@ func TestCandlesEmptyResponse(t *testing.T) {
 	q, err := (&AssetRequest{
 		Exchange:   "binance",
 		MarketType: string(binance.Spot),
-		Frame:      binance.OneMinute,
+		Frame:      binance.OneMinute.String(),
 		Indicator:  string(binance.Klines),
 		Market:     "VERYUNLIKELYMARKETNAME",
 		From:       pastTime.UnixMilli(),

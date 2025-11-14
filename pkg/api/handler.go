@@ -132,6 +132,14 @@ func (dq *AssetRequest) ToTime() *time.Time {
 	return data.AnyTimestampToTime(dq.To)
 }
 
+func (dq *AssetRequest) IsToday() bool {
+	utc := dq.ToTime().UTC()
+	if utc.IsZero() {
+		return false
+	}
+	return data.IsToday(utc)
+}
+
 func (dq *AssetRequest) MarshalJSON() ([]byte, error) {
 	// Marshaling JSON dosntr work with time.Time, so we need to convert to int64
 
@@ -186,7 +194,7 @@ func (s *Server) GetMarketHistory(w http.ResponseWriter, r *http.Request) {
 	q := &AssetRequest{
 		Exchange:   "binance",
 		MarketType: string(binance.Spot),
-		Frame:      binance.OneMinute,
+		Frame:      binance.OneMinute.String(),
 		Indicator:  string(binance.Klines),
 	}
 
@@ -231,7 +239,7 @@ func (s *Server) GetMarketHistory(w http.ResponseWriter, r *http.Request) {
 		wg.Add(1)
 		go func(asset *binance.HistoryAsset) {
 			defer wg.Done()
-			// Download and transform (this should create or reuse parquet file)
+			// Download and transform (this should create or reuse a parquet file)
 
 			startDownloadTime := time.Now()
 			infoCh, errCh := srv.DownloadAndTransform(asset)
@@ -282,7 +290,7 @@ func (s *Server) GetMarketHistory(w http.ResponseWriter, r *http.Request) {
 
 		todayResult, err := s.CandlesFromDuckDB(CandleDuckDBQuery{
 			Market:     q.Market,
-			Frame:      string(q.GetFrame()),
+			Frame:      string(q.GetFrame().String()),
 			Indicator:  q.Indicator,
 			MarketType: q.MarketType,
 			From:       q.FromTime().UnixMilli(),
@@ -303,7 +311,7 @@ func (s *Server) GetMarketHistory(w http.ResponseWriter, r *http.Request) {
 	// Query historical data from parquet files
 	historicalResult, err := s.CandlesFromParquet(CandleParquetQuery{
 		Market:     q.Market,
-		Frame:      string(q.GetFrame()),
+		Frame:      string(q.GetFrame().String()),
 		Indicator:  q.Indicator,
 		MarketType: q.MarketType,
 		From:       q.FromTime().UnixMilli(),
