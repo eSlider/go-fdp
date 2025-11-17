@@ -73,11 +73,13 @@ func IsToday(t time.Time) bool {
 
 	// Variant 3:
 	// Check if required asset.Date is after now
-	today := LastMomentOfYesterday()
-	return t.After(today)
+	return t.Before(LastMomentOfYesterday())
 }
 
 // LastMomentOfYesterday return's midnight.
 func LastMomentOfYesterday() time.Time {
-	return time.Now().UTC().Truncate(24 * time.Hour).Add(-1 * time.Nanosecond)
+	return time.Now().
+		UTC().
+		Truncate(24 * time.Hour).
+		Add(-1 * time.Nanosecond)
 }
