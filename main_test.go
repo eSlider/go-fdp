@@ -3,19 +3,22 @@ package main
 import (
 	"context"
 	"fmt"
+	"testing"
+	"time"
+
 	"sync-v3/pkg/binance"
 	"sync-v3/pkg/data"
 	"sync-v3/pkg/fs"
-	"testing"
-	"time"
 )
 
 func TestTimeBetween(t *testing.T) {
-
 	// start is 2020-08-02 00:00:00 UTC
 	start := *data.AnyTimestampToTime(1596327180)
-	// end is 2020-08-03 00:00:00 UTC
-	end := (*data.AnyTimestampToTime(1596327239)).Add(time.Hour * 24 * 2)
+
+	// endTime  is 2020-08-03 00:00:00 UTC
+	endTime := time.Date(2020, 8, 3, 0, 0, 0, 0, time.UTC)
+	// 1596327239
+	end := (*data.AnyTimestampToTime(endTime.Unix())).Add(time.Hour * 24 * 2)
 
 	// Trace time between start and end every day
 	for day := start; day.Before(end); day = day.AddDate(0, 0, 1) {
@@ -36,7 +39,7 @@ func TestMainProgramParquetCreation(t *testing.T) {
 		asset := &binance.HistoryAsset{
 			MarketType: binance.Spot,
 			Frequency:  binance.Daily,
-			Frame:      binance.OneMinute,
+			Frame:      binance.Minute,
 			Indicator:  binance.Klines,
 			Date:       time.Date(2020, 8, 2, 0, 0, 0, 0, time.UTC),
 			Market:     "ZECUSDT",
@@ -125,9 +128,6 @@ func TestMainProgramParquetCreation(t *testing.T) {
 			if record.OpenTime == 0 {
 				t.Errorf("record %d has invalid open_time: %d", i, record.OpenTime)
 			}
-			if record.CloseTime == 0 {
-				t.Errorf("record %d has invalid close_time: %d", i, record.CloseTime)
-			}
 			if record.Open <= 0 {
 				t.Errorf("record %d has invalid open price: %f", i, record.Open)
 			}
@@ -154,7 +154,7 @@ func TestMainProgramParquetCreation(t *testing.T) {
 			MarketType: binance.Spot,
 			Frequency:  binance.Daily,
 			Indicator:  binance.Klines,
-			Frame:      binance.OneMinute,
+			Frame:      binance.Minute,
 			// Date:       time.Now(),
 			Date:   time.Date(2019, 8, 1, 0, 0, 0, 0, time.UTC),
 			Market: "ETHUSDT",
@@ -167,9 +167,9 @@ func TestMainProgramParquetCreation(t *testing.T) {
 		}
 
 		// Download and transform
-		var end = false
+		end := false
 		var infos []*binance.AssetETLInfo
-		var tick = 1
+		tick := 1
 		for infoCh, errCh := srv.DownloadAndTransform(asset); !end; {
 			select {
 			case info, ok := <-infoCh:

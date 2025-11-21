@@ -1,15 +1,11 @@
 package binance
 
 import (
-	// "bufio"
-	// "bytes"
 	"context"
 	"database/sql"
 	"errors"
 	"fmt"
 	"io"
-	// "log"
-	// "os"
 	"strings"
 	"sync"
 	"sync-v3/pkg/data"
@@ -55,13 +51,12 @@ type HistoryConsumer struct {
 	cfg        *aws.Config         // AWS Config
 	client     *s3.Client          // S3 Client
 	downloader *manager.Downloader // S3 Downloader
-	bucket     string
-	localDir   string // Local directory for downloaded files
-
-	storeZIP bool // Store zip files locally
+	bucket     string              // Bucket
+	localDir   string              // Local directory for downloaded files
 
 	// Options
 	recreateParquet bool // Recreate parquet files if they already exist
+	storeZIP        bool // Store zip files locally flag
 	storeCSV        bool // Store CSV files locally
 }
 
@@ -142,14 +137,13 @@ func (s *HistoryConsumer) DownloadAndTransform(
 	errCh = make(chan error)
 
 	go func() {
-		defer close(infoCh)
-		defer close(errCh)
-
 		// If it's today, get candles from current api
 		if asset.IsToday() {
-			s.WriteToday(asset, errCh, infoCh)
+			s.DownloadToday(asset, errCh, infoCh)
 			return
 		}
+		defer close(infoCh)
+		defer close(errCh)
 
 		if err := asset.IsHistoryLinkAvailable(); err != nil {
 			errCh <- errors.Join(ErrNotZipLink, fmt.Errorf("invalid asset: %s", asset))
@@ -356,8 +350,23 @@ func (s *HistoryConsumer) GetAssets(asset *HistoryAsset) (info chan *AssetETLInf
 	return info
 }
 
-func (s *HistoryConsumer) WriteToday(asset *HistoryAsset, errCh chan error, infoCh chan *AssetETLInfo) {
+func (s *HistoryConsumer) DownloadToday(asset *HistoryAsset, errCh chan error, infoCh chan *AssetETLInfo) {
 	duckDBPath := fs.GetModuleRelativePath(asset.TodayDuckDBPath())
+	//
+	// c, err := duckdb.NewConnector("", nil)
+	// if err != nil {
+	// 	log.Fatalf("could not initialize new connector: %s", err.Error())
+	// }
+	//
+	// con, err := c.Connect(context.Background())
+	// if err != nil {
+	// 	log.Fatalf("could not connect: %s", err.Error())
+	// }
+	//
+	// db := sql.OpenDB(c)
+	// if _, err := db.Exec(`CREATE TABLE users (name VARCHAR, age INTEGER)`); err != nil {
+	// 	log.Fatalf("could not create table users: %s", err.Error())
+	// }
 
 	// Open DuckDB file for today's cache
 	db, err := sql.Open("duckdb", duckDBPath)
@@ -365,30 +374,48 @@ func (s *HistoryConsumer) WriteToday(asset *HistoryAsset, errCh chan error, info
 		errCh <- fmt.Errorf("error opening DuckDB file %s: %v", duckDBPath, err)
 		return
 	}
-	defer db.Close()
+	// defer db.Close()
 
 	// Create table for caching kline data if it doesn't exist
 	createTableSQL := `
-	CREATE TABLE IF NOT EXISTS klines (
-		open_time BIGINT,
-		close_time BIGINT,
-		open_price DOUBLE,
-		high_price DOUBLE,
-		low_price DOUBLE,
-		close_price DOUBLE,
-		volume DOUBLE,
-		PRIMARY KEY (open_time)
-	)`
+		-- Crate candles table
+		CREATE TABLE IF NOT EXISTS candles
+		(
+			-- unique identifier
+			openTime timestamp primary key,
+			--closeTime TIMESTAMP GENERATED ALWAYS AS (openTime + INTERVAL '1 minute' + INTERVAL '-1 microsecond') ,
+
+			open double NOT NULL,
+			high double NOT NULL,
+			low double NOT NULL,
+			close double NOT NULL,
+
+			volume double NOT NULL
+		);
+
+		CREATE TABLE IF NOT EXISTS klines (
+			open_time BIGINT,
+			close_time BIGINT,
+			open_price DOUBLE,
+			high_price DOUBLE,
+			low_price DOUBLE,
+			close_price DOUBLE,
+			volume DOUBLE,
+			PRIMARY KEY (open_time)
+		);
+
+		-- Saves the last processed query
+		CHECKPOINT`
 	if _, err := db.Exec(createTableSQL); err != nil {
 		errCh <- fmt.Errorf("error creating klines table: %v", err)
 		return
 	}
-
+	if err := db.Close(); err != nil {
+		errCh <- fmt.Errorf("error closing DuckDB file: %v", err)
+	}
 	now := time.Now()
-	todayMidnight := now.Truncate(24 * time.Hour)
-
 	// Process data in hourly chunks from midnight to now
-	startTime := todayMidnight
+	startTime := data.LastMomentOfYesterday()
 
 	var wg sync.WaitGroup
 	for startTime.Before(now) {
@@ -421,7 +448,7 @@ func (s *HistoryConsumer) WriteToday(asset *HistoryAsset, errCh chan error, info
 			klines, err := GetCurrentCandles(
 				&CandleRequestV3{
 					Symbol:    asset.Market,
-					Interval:  string(asset.Frame),
+					Interval:  asset.Frame.String(),
 					StartTime: &start,
 					EndTime:   &end,
 					TimeZone:  nil,

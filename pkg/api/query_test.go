@@ -2,11 +2,15 @@ package api
 
 import (
 	"bytes"
+	"context"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"sync-v3/pkg/binance"
 	"sync-v3/pkg/data"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -89,12 +93,12 @@ func TestCandlesToday(t *testing.T) {
 	q, err := (&AssetRequest{
 		Exchange:   "binance",
 		MarketType: string(binance.Spot),
-		Frame:      binance.OneMinute.String(),
+		Frame:      binance.Minute.String(),
 		Indicator:  string(binance.Klines),
 		Market:     "BTCUSDT",
 		From:       todayMidnight.UnixMilli(),
 		To:         now.UnixMilli(),
-	}).MarshalJSON()
+	}).MarshalJson()
 
 	if err != nil {
 		t.Fatalf("Failed to marshal query: %v", err)
@@ -156,12 +160,12 @@ func TestCandlesHistorical(t *testing.T) {
 	q, err := (&AssetRequest{
 		Exchange:   "binance",
 		MarketType: string(binance.Spot),
-		Frame:      binance.OneMinute.String(),
+		Frame:      binance.Minute.String(),
 		Indicator:  string(binance.Klines),
 		Market:     "BTCUSDT",
 		From:       historicalDate.UnixMilli(),
 		To:         nextDay.UnixMilli(),
-	}).MarshalJSON()
+	}).MarshalJson()
 
 	if err != nil {
 		t.Fatalf("Failed to marshal query: %v", err)
@@ -245,15 +249,18 @@ func TestCandlesHistorical(t *testing.T) {
 func TestCandlesMixedRange(t *testing.T) {
 	now := time.Now()
 	// Use a date that has historical parquet data available
+	to := now.Truncate(24 * time.Hour).Add(1 * time.Minute)
+	from := now.Truncate(24 * time.Hour).Add(-1 * time.Minute)
+	fmt.Printf("Using date range: %v to %v\n", from, to)
 	q, err := (&AssetRequest{
 		Exchange:   "binance",
 		MarketType: string(binance.Spot),
-		Frame:      binance.OneMinute.String(),
+		Frame:      binance.Minute.String(),
 		Indicator:  string(binance.Klines),
 		Market:     "BTCUSDT",
-		From:       time.Date(2025, 9, 12, 0, 0, 0, 0, time.UTC).UnixMilli(),
-		To:         now.UnixMilli(),
-	}).MarshalJSON()
+		From:       from.UnixMilli(),
+		To:         to.UnixMilli(),
+	}).MarshalJson()
 
 	if err != nil {
 		t.Fatalf("Failed to marshal query: %v", err)
@@ -320,7 +327,7 @@ func TestCandlesInvalidRequest(t *testing.T) {
 			request: AssetRequest{
 				Exchange:   "binance",
 				MarketType: "invalid",
-				Frame:      binance.OneMinute.String(),
+				Frame:      binance.Minute.String(),
 				Indicator:  string(binance.Klines),
 				Market:     "BTCUSDT",
 				From:       time.Now().AddDate(0, 0, -1).UnixMilli(),
@@ -333,7 +340,7 @@ func TestCandlesInvalidRequest(t *testing.T) {
 			request: AssetRequest{
 				Exchange:   "binance",
 				MarketType: string(binance.Spot),
-				Frame:      binance.OneMinute.String(),
+				Frame:      binance.Minute.String(),
 				Indicator:  string(binance.Klines),
 				Market:     "BTCUSDT",
 				From:       time.Now().UnixMilli(),
@@ -346,7 +353,7 @@ func TestCandlesInvalidRequest(t *testing.T) {
 			request: AssetRequest{
 				Exchange:   "binance",
 				MarketType: string(binance.Spot),
-				Frame:      binance.OneMinute.String(),
+				Frame:      binance.Minute.String(),
 				Indicator:  string(binance.Klines),
 				Market:     "",
 				From:       time.Now().AddDate(0, 0, -1).UnixMilli(),
@@ -358,7 +365,7 @@ func TestCandlesInvalidRequest(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			q, err := tt.request.MarshalJSON()
+			q, err := tt.request.MarshalJson()
 			if err != nil {
 				t.Fatalf("Failed to marshal query: %v", err)
 			}
@@ -386,12 +393,12 @@ func TestCandlesEmptyResponse(t *testing.T) {
 	q, err := (&AssetRequest{
 		Exchange:   "binance",
 		MarketType: string(binance.Spot),
-		Frame:      binance.OneMinute.String(),
+		Frame:      binance.Minute.String(),
 		Indicator:  string(binance.Klines),
 		Market:     "VERYUNLIKELYMARKETNAME",
 		From:       pastTime.UnixMilli(),
 		To:         pastTime.Add(time.Hour).UnixMilli(),
-	}).MarshalJSON()
+	}).MarshalJson()
 
 	if err != nil {
 		t.Fatalf("Failed to marshal query: %v", err)
@@ -421,4 +428,19 @@ func TestCandlesEmptyResponse(t *testing.T) {
 	}
 
 	t.Log("Successfully handled empty response for non-existent market")
+}
+
+// TestWithDeadlineAfterDeadline tests that a context with a deadline is canceled after the deadline
+// This is a example on howto fake time in tests
+func TestWithDeadlineAfterDeadline(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		deadline := time.Now().Add(5 * time.Second)
+		ctx, _ := context.WithDeadline(t.Context(), deadline)
+
+		time.Sleep(time.Until(deadline))
+		synctest.Wait()
+		if err := ctx.Err(); !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("context not canceled after deadline")
+		}
+	})
 }

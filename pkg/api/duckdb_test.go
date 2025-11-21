@@ -131,7 +131,7 @@ func TestDuckDBTodayCaching(t *testing.T) {
 	todayAsset := &binance.HistoryAsset{
 		MarketType: binance.Spot,
 		Frequency:  binance.Daily,
-		Frame:      binance.OneMinute,
+		Frame:      binance.Minute,
 		Indicator:  binance.Klines,
 		Date:       time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()),
 		Market:     "BTCUSDT",
@@ -151,7 +151,7 @@ func TestDuckDBTodayCaching(t *testing.T) {
 		}
 		defer db.Close()
 
-		// Create table (same as WriteToday does)
+		// Create table (same as DownloadToday does)
 		createTableSQL := `
 			CREATE TABLE IF NOT EXISTS klines (
 				open_time BIGINT,
