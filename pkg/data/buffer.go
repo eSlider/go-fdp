@@ -1,6 +1,7 @@
 package data
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -12,6 +13,7 @@ import (
 type Buffer struct {
 	mu   sync.Mutex
 	data []byte
+	loc  int
 }
 
 // String returns the string representation of the buffer
@@ -22,6 +24,31 @@ func (b *Buffer) String() string {
 // Bytes return the underlying byte slice
 func (b *Buffer) Bytes() []byte {
 	return b.data
+}
+
+// Seek seeks in the underlying memory buffer.
+func (b *Buffer) Seek(offset int64, whence int) (int64, error) {
+	newLoc := b.loc
+	switch whence {
+	case io.SeekStart:
+		newLoc = int(offset)
+	case io.SeekCurrent:
+		newLoc += int(offset)
+	case io.SeekEnd:
+		newLoc = len(b.data) + int(offset)
+	}
+
+	if newLoc < 0 {
+		return int64(b.loc), errors.New("unable to seek to a location <0")
+	}
+
+	if newLoc > len(b.data) {
+		newLoc = len(b.data)
+	}
+
+	b.loc = newLoc
+
+	return int64(b.loc), nil
 }
 
 func (b *Buffer) WriteAt(p []byte, off int64) (n int, err error) {
@@ -44,16 +71,45 @@ func (b *Buffer) WriteAt(p []byte, off int64) (n int, err error) {
 }
 
 // Write implements the io.Writer interface
-func (b *Buffer) Write(p []byte) (n int, err error) {
-	if b == nil {
-		return 0, fmt.Errorf("nil buffer")
-	}
+// func (b *Buffer) Write(p []byte) (n int, err error) {
+// 	if b == nil {
+// 		return 0, fmt.Errorf("nil buffer")
+// 	}
+// 	b.mu.Lock()
+// 	defer b.mu.Unlock()
+//
+// 	b.data = append(b.data, p...)
+// 	return len(p), nil
+// }
 
+// Write writes data from p into BufferFile.
+func (b *Buffer) Write(p []byte) (n int, err error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	b.data = append(b.data, p...)
-	return len(p), nil
+	// Do we have space?
+	if available := cap(b.data) - b.loc; available < len(p) {
+		// How much should we expand by?
+		addCap := cap(b.data)
+		if addCap < len(p) {
+			addCap = len(p)
+		}
+
+		newBuff := make([]byte, len(b.data), cap(b.data)+addCap)
+
+		copy(newBuff, b.data)
+
+		b.data = newBuff
+	}
+
+	// Write
+	n = copy(b.data[b.loc:cap(b.data)], p)
+	b.loc += n
+	if len(b.data) < b.loc {
+		b.data = b.data[:b.loc]
+	}
+
+	return n, nil
 }
 
 // Close closes the buffer
@@ -64,22 +120,34 @@ func (b *Buffer) Close() error {
 	return nil
 }
 
-// ReadCSV implements the io.Reader interface
+// Read reads data form Buffer
 func (b *Buffer) Read(p []byte) (n int, err error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
+	n = copy(p, b.data[b.loc:len(b.data)])
+	b.loc += n
 
-	if len(b.data) == 0 {
-		return 0, io.EOF
+	if b.loc == len(b.data) {
+		return n, io.EOF
 	}
 
-	n = copy(p, b.data)
-	b.data = b.data[n:]
-	if len(b.data) == 0 {
-		err = io.EOF
-	}
-	return n, err
+	return n, nil
 }
+
+// ReadCSV implements the io.Reader interface
+// func (b *Buffer) Read(p []byte) (n int, err error) {
+// 	b.mu.Lock()
+// 	defer b.mu.Unlock()
+//
+// 	if len(b.data) == 0 {
+// 		return 0, io.EOF
+// 	}
+//
+// 	n = copy(p, b.data)
+// 	b.data = b.data[n:]
+// 	if len(b.data) == 0 {
+// 		err = io.EOF
+// 	}
+// 	return n, err
+// }
 
 // Persist writes the buffer to a file
 func (b *Buffer) Persist(path string) (err error) {
