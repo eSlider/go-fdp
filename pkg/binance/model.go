@@ -49,12 +49,13 @@ const (
 	StatusParquetReady
 )
 
+// AssetETLInfo - asset ETL info
 type AssetETLInfo struct {
-	Status ETLStatus
-	Buffer *data.Buffer
-	Path   string
-	Err    error
-	Info   string
+	Status ETLStatus    // Status of the asset ETL
+	Buffer *data.Buffer // Buffer which should be used used to cache from zip -> csv file to parquet file
+	Path   string       // Path to the asset zip file
+	Err    error        // Error if any
+	Info   string       // Additional info
 }
 
 func (i *AssetETLInfo) Done() bool {
@@ -75,25 +76,29 @@ const (
 	Nanosecond  Frame = 1
 	Microsecond       = 1000 * Nanosecond
 	Millisecond       = 1000 * Microsecond
-	OneSecond         = 1000 * Millisecond
-	OneMinute         = 60 * OneSecond
-	ThreeMinute       = 3 * OneMinute
-	FiveMinute        = 5 * OneMinute
-	FifteenMin        = 15 * OneMinute
-	Hour              = 60 * OneMinute
+	Second            = 1000 * Millisecond
+	Minute            = 60 * Second
+	ThreeMinute       = 3 * Minute
+	FiveMinute        = 5 * Minute
+	FifteenMin        = 15 * Minute
+	Hour              = 60 * Minute
 	TwoHour           = 2 * Hour
 	OneDay            = 24 * Hour
 	OneWeek           = 7 * OneDay
 )
 
 var Frames = map[string]Frame{
-	"1s":  OneSecond,
-	"1m":  OneMinute,
+	"":    NoFrame,
+	"1ns": Nanosecond,
+	"1us": Microsecond,
+	"1s":  Second,
+	"1m":  Minute,
 	"3m":  ThreeMinute,
 	"5m":  FiveMinute,
 	"15m": FifteenMin,
 	"1h":  Hour,
 	"2h":  TwoHour,
+	"4h":  4 * Hour,
 	"1d":  OneDay,
 	"1w":  OneWeek,
 }
@@ -129,7 +134,7 @@ func (f Frame) String() string {
 // NewFrame - returns a frame
 func NewFrame(frame string) Frame {
 	if frame == "" {
-		return OneMinute
+		return Minute
 	}
 	return StringToFrame(frame)
 }
@@ -230,7 +235,7 @@ func (q *HistoryAsset) SymbolLink() string {
 		q.Frequency = Monthly
 	}
 	if q.Frame.String() == "" {
-		q.Frame = OneMinute
+		q.Frame = Minute
 	}
 	if q.Indicator == "" {
 		q.Indicator = Klines
