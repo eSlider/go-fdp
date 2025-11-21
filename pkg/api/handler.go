@@ -140,18 +140,18 @@ func (dq *AssetRequest) IsToday() bool {
 	return data.IsToday(utc)
 }
 
-func (dq *AssetRequest) MarshalJSON() ([]byte, error) {
+func (dq AssetRequest) MarshalJson() ([]byte, error) {
 	// Marshaling JSON dosntr work with time.Time, so we need to convert to int64
 
-	m := make(map[string]any)
-	m["from"] = dq.From
-	m["to"] = dq.To
-	m["market"] = dq.Market
-	m["exchange"] = dq.Exchange
-	m["marketType"] = dq.MarketType
-	m["frame"] = dq.Frame
-	m["indicator"] = dq.Indicator
-	marshal, err := json.Marshal(m)
+	// m := make(map[string]any)
+	// m["from"] = dq.From
+	// m["to"] = dq.To
+	// m["market"] = dq.Market
+	// m["exchange"] = dq.Exchange
+	// m["marketType"] = dq.MarketType
+	// m["frame"] = dq.Frame
+	// m["indicator"] = dq.Indicator
+	marshal, err := json.Marshal(dq)
 	return marshal, err
 }
 
@@ -194,7 +194,7 @@ func (s *Server) GetMarketHistory(w http.ResponseWriter, r *http.Request) {
 	q := &AssetRequest{
 		Exchange:   "binance",
 		MarketType: string(binance.Spot),
-		Frame:      binance.OneMinute.String(),
+		Frame:      binance.Minute.String(),
 		Indicator:  string(binance.Klines),
 	}
 
@@ -249,8 +249,8 @@ func (s *Server) GetMarketHistory(w http.ResponseWriter, r *http.Request) {
 				case info, ok := <-infoCh:
 					if ok {
 						infos = append(infos, info)
-						// fmt.Printf("Downloaded %s\n", cur.Format("2006-01-02"))
-						// fmt.Printf("Path:%s", info.Path)
+						fmt.Printf("Downloaded %s\n", cur.Format("2006-01-02"))
+						// fmt.Printf("Path:%s", 9info.Path)
 					} else {
 						done = true
 					}
@@ -572,7 +572,7 @@ func (s *Server) CandlesFromDuckDB(q CandleDuckDBQuery) (result []*CandleRespons
 		return []*CandleResponse{}, nil
 	}
 
-	// Open the DuckDB file read only
+	// Open the DuckDB file shared, for reading use: `?access_mode=read_only&threads=4`
 	db, err := sql.Open("duckdb", q.DuckDBPath+"?access_mode=READ_WRITE")
 	if err != nil {
 		return nil, fmt.Errorf("failed to open DuckDB file: %w", err)
