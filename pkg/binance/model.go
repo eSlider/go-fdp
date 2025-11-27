@@ -6,8 +6,9 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"sync-v3/pkg/data"
 	"time"
+
+	"sync-v3/pkg/data"
 )
 
 // ETLStatus - represents asset processing status
@@ -179,9 +180,9 @@ const (
 type MarketType string
 
 const (
-	Spot    MarketType = "spot"
-	Futures            = "futures"
-	Option             = "option"
+	Spot    MarketType = "spot"    // Spot - trading with immediate settlement
+	Futures            = "futures" // Futures - trading with delayed settlement
+	Option             = "option"  // Option - trading with the right, but not the obligation to buy or sell
 )
 
 func (m MarketType) String() string {
@@ -259,7 +260,6 @@ func (q *HistoryAsset) SymbolFrameLink() string {
 			q.Frame)
 	}
 	return q.SymbolLink()
-
 }
 
 // SymbolDateAssetZipLink - is a link to a concrete asset zip file
@@ -379,7 +379,6 @@ func (q *HistoryAsset) TodayDuckDBPath() string {
 
 // IsToday - Check  date,s before now until midnight, handle using other api
 func (q *HistoryAsset) IsToday() bool {
-
 	return data.IsToday(q.Date)
 }
 
@@ -421,6 +420,7 @@ func strToFloat(s string) float64 {
 	}
 	return f
 }
+
 func (k *Kline) UnmarshalJSON(data []byte) error {
 	// Intermediate slice for mixed types
 	var tmp []any

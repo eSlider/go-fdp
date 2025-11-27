@@ -19,29 +19,17 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
 
-// NewAwsConfig returns aws config for binance data
-// Ultimately this is just S3 with anonymous access and ap-northeast-1 region
-// Alternatives:
-//   - https://data.binance.vision/?prefix=data/spot/monthly/trades/0GBNB/
-//   - https://data.binance.vision.s3.amazonaws.com/
-func NewAwsConfig(ctx context.Context) (*aws.Config, error) {
-	cfg, err := config.LoadDefaultConfig(ctx,
-		config.WithRegion("ap-northeast-1"),
-		config.WithEndpointResolver(aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
-			if service == s3.ServiceID {
-				return aws.Endpoint{
-					URL:           "https://s3-ap-northeast-1.amazonaws.com",
-					SigningRegion: "ap-northeast-1",
-				}, nil
-			}
-			return aws.Endpoint{}, fmt.Errorf("unknown service: %s", service)
-		})),
-		config.WithCredentialsProvider(aws.AnonymousCredentials{}),
-	)
-	if err != nil {
-		return nil, err
-	}
-	return &cfg, nil
+var ErrNotZipLink = fmt.Errorf("not found")
+
+type CandleParquetQuery struct {
+	Market     string `validate:"required"`
+	Frame      string `validate:"required"`
+	Indicator  string `validate:"required"`
+	MarketType string `validate:"required"`
+	From       int64  `validate:"required"`
+	To         int64  `validate:"required"`
+	DataPath   string // Path to data directory
+	HivePath   string // Path to parquet files. Example: "*/*/*.parquet"
 }
 
 // HistoryConsumer of binance historical assets
@@ -67,9 +55,30 @@ type ListResult struct {
 	Err  error
 }
 
-// func (s *HistoryConsumer) QueryFromParquet() string {
-//
-// }
+// NewAwsConfig returns aws config for binance data
+// Ultimately this is just S3 with anonymous access and ap-northeast-1 region
+// Alternatives:
+//   - https://data.binance.vision/?prefix=data/spot/monthly/trades/0GBNB/
+//   - https://data.binance.vision.s3.amazonaws.com/
+func NewAwsConfig(ctx context.Context) (*aws.Config, error) {
+	cfg, err := config.LoadDefaultConfig(ctx,
+		config.WithRegion("ap-northeast-1"),
+		config.WithEndpointResolver(aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
+			if service == s3.ServiceID {
+				return aws.Endpoint{
+					URL:           "https://s3-ap-northeast-1.amazonaws.com",
+					SigningRegion: "ap-northeast-1",
+				}, nil
+			}
+			return aws.Endpoint{}, fmt.Errorf("unknown service: %s", service)
+		})),
+		config.WithCredentialsProvider(aws.AnonymousCredentials{}),
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &cfg, nil
+}
 
 // List objects by paths
 func (s *HistoryConsumer) List(path string) (ch chan ListResult) {
@@ -112,19 +121,6 @@ func (s *HistoryConsumer) List(path string) (ch chan ListResult) {
 
 	}()
 	return ch
-}
-
-var ErrNotZipLink = fmt.Errorf("not found")
-
-type CandleParquetQuery struct {
-	Market     string `validate:"required"`
-	Frame      string `validate:"required"`
-	Indicator  string `validate:"required"`
-	MarketType string `validate:"required"`
-	From       int64  `validate:"required"`
-	To         int64  `validate:"required"`
-	DataPath   string // Path to data directory
-	HivePath   string // Path to parquet files. Example: "*/*/*.parquet"
 }
 
 func (s *HistoryConsumer) DownloadAndTransform(
@@ -426,7 +422,13 @@ func (s *HistoryConsumer) DownloadToday(asset *HistoryAsset, errCh chan error, i
 			end = now.UnixMicro()
 		}
 
-		wg.Go(func() {
+		go func(
+			wg *sync.WaitGroup,
+			db *sql.DB,
+			errCh chan error,
+		) {
+			wg.Add(1)
+
 			// Check if we already have data for this time range
 			var lastOpenTime int
 			checkSQL := `
@@ -479,7 +481,7 @@ func (s *HistoryConsumer) DownloadToday(asset *HistoryAsset, errCh chan error, i
 					return
 				}
 			}
-		})
+		}(&wg, db, errCh)
 
 		startTime = startTime.Add(time.Hour)
 	}

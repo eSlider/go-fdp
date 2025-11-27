@@ -1,56 +1,22 @@
 package api
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"net/http"
-	"net/http/httptest"
-	"sync-v3/pkg/binance"
-	"sync-v3/pkg/data"
 	"testing"
 	"testing/synctest"
 	"time"
+
+	"sync-v3/pkg/binance"
+	"sync-v3/pkg/data"
 )
-
-func QueryServer(t *testing.T, method, target string, body []byte) *httptest.ResponseRecorder {
-	// Create a test server
-	server, err := NewServer()
-	if err != nil {
-		t.Errorf("failed to create server: %v", err)
-	}
-	defer server.Close()
-
-	// Create a test POST request without gzip support "/v1/sql"
-	req := httptest.NewRequest(method, target, bytes.NewReader(body))
-
-	// Create a response recorder
-	w := httptest.NewRecorder()
-
-	// Call ServeHTTP
-	server.ServeHTTP(w, req)
-	return w
-}
-
-func HandleServerResponse[T any](w *httptest.ResponseRecorder) (r *T, err error) {
-	body := w.Body
-	if w.Code != http.StatusOK {
-		r, err := data.JsonDecode[Error](body)
-		if err != nil {
-			return nil, err
-		}
-		return nil, r
-	}
-	return data.JsonDecode[T](body)
-}
 
 // TestCandles - test candles endpoint
 func TestMarkets(t *testing.T) {
-
 	w := QueryServer(t, "GET", "/v1/markets", nil)
 	r, err := data.JsonDecode[[]*binance.Market](w.Body)
-
 	if err != nil {
 		t.Errorf("Failed to decode response: %v", err)
 	}
@@ -64,7 +30,6 @@ func TestMarkets(t *testing.T) {
 			t.Logf("Symbol count is less than 2: %s", m.Name)
 		}
 	}
-
 }
 
 // TestCandles - test candles endpoint
@@ -81,7 +46,6 @@ func TestSQL(t *testing.T) {
 	if (*result)[0].Test != 1 {
 		t.Errorf("Expected 1, got %d", (*result)[0].Test)
 	}
-
 }
 
 // TestCandlesToday tests querying today's data from DuckDB cache
@@ -99,7 +63,6 @@ func TestCandlesToday(t *testing.T) {
 		From:       todayMidnight.UnixMilli(),
 		To:         now.UnixMilli(),
 	}).MarshalJson()
-
 	if err != nil {
 		t.Fatalf("Failed to marshal query: %v", err)
 	}
@@ -166,7 +129,6 @@ func TestCandlesHistorical(t *testing.T) {
 		From:       historicalDate.UnixMilli(),
 		To:         nextDay.UnixMilli(),
 	}).MarshalJson()
-
 	if err != nil {
 		t.Fatalf("Failed to marshal query: %v", err)
 	}
@@ -246,73 +208,78 @@ func TestCandlesHistorical(t *testing.T) {
 }
 
 // TestCandlesMixedRange tests querying a range that includes both today and historical data
+// Cases:
+// - Today's data is available, historical data is available
 func TestCandlesMixedRange(t *testing.T) {
-	now := time.Now()
 	// Use a date that has historical parquet data available
+	now := time.Now()
 	to := now.Truncate(24 * time.Hour).Add(1 * time.Minute)
 	from := now.Truncate(24 * time.Hour).Add(-1 * time.Minute)
-	fmt.Printf("Using date range: %v to %v\n", from, to)
-	q, err := (&AssetRequest{
-		Exchange:   "binance",
-		MarketType: string(binance.Spot),
-		Frame:      binance.Minute.String(),
-		Indicator:  string(binance.Klines),
-		Market:     "BTCUSDT",
-		From:       from.UnixMilli(),
-		To:         to.UnixMilli(),
-	}).MarshalJson()
 
-	if err != nil {
-		t.Fatalf("Failed to marshal query: %v", err)
-	}
-
-	w := QueryServer(t, http.MethodGet, "/v1/data", q)
-
-	// Check if the response is successful
-	if w.Code != http.StatusOK {
-		// For mixed range queries, it's expected that historical data might fail to download
-		t.Logf("Mixed range query returned status %d (expected for missing historical data): %s", w.Code, w.Body.String())
-		return
-	}
-
-	r, err := HandleServerResponse[[]*CandleResponse](w)
-	if err != nil {
-		t.Fatalf("Failed to decode successful response: %v", err)
-	}
-
-	if r == nil {
-		t.Fatal("Response is nil")
-	}
-
-	// Validate that we get some data (could be from today, historical, or both)
-	if len(*r) == 0 {
-		t.Log("No data returned for mixed range - this might be expected if no cached data exists")
-		return
-	}
-
-	// Validate data structure and ordering
-	for i, candle := range *r {
-		openTime := time.Time(candle.OpenTime)
-		closeTime := time.Time(candle.CloseTime)
-		if openTime.IsZero() || closeTime.IsZero() {
-			t.Errorf("Candle %d has invalid timestamps: OpenTime=%v, CloseTime=%v",
-				i, openTime, closeTime)
+	t.Run("Today's data is available, historical data is available", func(t *testing.T) {
+		// Use a date that has historical parquet data available
+		fmt.Printf("Using date range: %v to %v\n", from, to)
+		q, err := (&AssetRequest{
+			Exchange:   "binance",
+			MarketType: string(binance.Spot),
+			Frame:      binance.Minute.String(),
+			Indicator:  string(binance.Klines),
+			Market:     "BTCUSDT",
+			From:       from.UnixMilli(),
+			To:         to.UnixMilli(),
+		}).MarshalJson()
+		if err != nil {
+			t.Fatalf("Failed to marshal query: %v", err)
 		}
-		if !closeTime.After(openTime) {
-			t.Errorf("Candle %d CloseTime should be after OpenTime", i)
-		}
-	}
 
-	// Check chronological ordering
-	for i := 1; i < len(*r); i++ {
-		prevCloseTime := time.Time((*r)[i-1].CloseTime)
-		currCloseTime := time.Time((*r)[i].CloseTime)
-		if prevCloseTime.Before(currCloseTime) {
-			t.Errorf("Candles not properly sorted by close time descending")
-		}
-	}
+		w := QueryServer(t, http.MethodGet, "/v1/data", q)
 
-	t.Logf("Successfully retrieved %d candles for mixed date range", len(*r))
+		// Check if the response is successful
+		if w.Code != http.StatusOK {
+			// For mixed range queries, it's expected that historical data might fail to download
+			t.Logf("Mixed range query returned status %d (expected for missing historical data): %s", w.Code, w.Body.String())
+			return
+		}
+
+		r, err := HandleServerResponse[[]*CandleResponse](w)
+		if err != nil {
+			t.Fatalf("Failed to decode successful response: %v", err)
+		}
+
+		if r == nil {
+			t.Fatal("Response is nil")
+		}
+
+		// Validate that we get some data (could be from today, historical, or both)
+		if len(*r) == 0 {
+			t.Log("No data returned for mixed range - this might be expected if no cached data exists")
+			return
+		}
+
+		// Validate data structure and ordering
+		for i, candle := range *r {
+			openTime := time.Time(candle.OpenTime)
+			closeTime := time.Time(candle.CloseTime)
+			if openTime.IsZero() || closeTime.IsZero() {
+				t.Errorf("Candle %d has invalid timestamps: OpenTime=%v, CloseTime=%v",
+					i, openTime, closeTime)
+			}
+			if !closeTime.After(openTime) {
+				t.Errorf("Candle %d CloseTime should be after OpenTime", i)
+			}
+		}
+
+		// Check chronological ordering
+		for i := 1; i < len(*r); i++ {
+			prevCloseTime := time.Time((*r)[i-1].CloseTime)
+			currCloseTime := time.Time((*r)[i].CloseTime)
+			if prevCloseTime.Before(currCloseTime) {
+				t.Errorf("Candles not properly sorted by close time descending")
+			}
+		}
+
+		t.Logf("Successfully retrieved %d candles for mixed date range", len(*r))
+	})
 }
 
 // TestCandlesInvalidRequest tests error handling for invalid requests
@@ -399,7 +366,6 @@ func TestCandlesEmptyResponse(t *testing.T) {
 		From:       pastTime.UnixMilli(),
 		To:         pastTime.Add(time.Hour).UnixMilli(),
 	}).MarshalJson()
-
 	if err != nil {
 		t.Fatalf("Failed to marshal query: %v", err)
 	}

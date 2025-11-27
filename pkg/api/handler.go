@@ -11,10 +11,11 @@ import (
 	"reflect"
 	"strconv"
 	"sync"
+	"time"
+
 	"sync-v3/pkg/binance"
 	"sync-v3/pkg/data"
 	"sync-v3/pkg/fs"
-	"time"
 
 	_ "github.com/duckdb/duckdb-go/v2"
 	"github.com/go-playground/validator/v10"
@@ -143,14 +144,6 @@ func (dq *AssetRequest) IsToday() bool {
 func (dq AssetRequest) MarshalJson() ([]byte, error) {
 	// Marshaling JSON dosntr work with time.Time, so we need to convert to int64
 
-	// m := make(map[string]any)
-	// m["from"] = dq.From
-	// m["to"] = dq.To
-	// m["market"] = dq.Market
-	// m["exchange"] = dq.Exchange
-	// m["marketType"] = dq.MarketType
-	// m["frame"] = dq.Frame
-	// m["indicator"] = dq.Indicator
 	marshal, err := json.Marshal(dq)
 	return marshal, err
 }
@@ -223,7 +216,7 @@ func (s *Server) GetMarketHistory(w http.ResponseWriter, r *http.Request) {
 
 	var result []*CandleResponse
 	var wg sync.WaitGroup
-	var start = time.Now()
+	start := time.Now()
 
 	// Loop between dates - download/transform but don't fail on errors
 	for cur := fromTime; !cur.After(toTime); cur = cur.AddDate(0, 0, 1) {
@@ -264,7 +257,6 @@ func (s *Server) GetMarketHistory(w http.ResponseWriter, r *http.Request) {
 					}
 				}
 			}
-
 		}(asset)
 	}
 	wg.Wait()
@@ -604,7 +596,6 @@ func (s *Server) CandlesFromDuckDB(q CandleDuckDBQuery) (result []*CandleRespons
 			Result:     candle,
 			// TagName:    "mapstructure",
 		})
-
 		if err != nil {
 			log.Fatalf("new decoder: %v", err)
 		}

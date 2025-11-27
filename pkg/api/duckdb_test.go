@@ -4,11 +4,12 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"testing"
+	"time"
+
 	"sync-v3/pkg/binance"
 	"sync-v3/pkg/data"
 	"sync-v3/pkg/fs"
-	"testing"
-	"time"
 
 	_ "github.com/duckdb/duckdb-go/v2"
 )
@@ -25,8 +26,8 @@ func TestWorkGroup(t *testing.T) {
 		return ch
 	}
 
-	var jobsCount = 3
-	var results = make(chan int, jobsCount)
+	jobsCount := 3
+	results := make(chan int, jobsCount)
 	// var wg sync.WaitGroup
 	for i := 1; i <= jobsCount; i++ {
 		go func() {
@@ -74,7 +75,6 @@ func TestDuckDBParquetReading(t *testing.T) {
 		}
 
 		fmt.Sprintf("finished reading klines parquet")
-
 	})
 	t.Run("reads klines parquet file directly", func(t *testing.T) {
 		// Open DuckDB connection (same as handler)
