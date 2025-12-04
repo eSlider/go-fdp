@@ -4,35 +4,47 @@ import (
 	"compress/gzip"
 	"flag"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
+	"os"
 	"strings"
 
 	"sync-v3/pkg/api"
 )
 
 func main() {
+	// Initialize JSON logger
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	}))
+	slog.SetDefault(logger)
+
 	port := flag.Int("port", 8082, "port to listen on")
 	flag.Parse()
 
 	// Create API server
 	server, err := api.NewServer()
 	if err != nil {
-		log.Fatalf("Failed to create API server: %v", err)
+		slog.Error("Failed to create API server", "error", err)
+		os.Exit(1)
 	}
 	defer server.Close()
 
 	// Start HTTP server
-	log.Printf("Starting server on :%d", *port)
-	log.Println("API endpoints:")
-	log.Println("  GET  /v1/data?from={ms}&to={ms}&market={symbol}&exchange=binance&marketType=spot&frame=1m")
-	log.Println("  POST /v1/sql with JSON body: {\"query\": \"SELECT * FROM klines LIMIT 10\"}")
+	slog.Info("Starting server",
+		"port", *port,
+		"endpoints", []string{
+			"GET  /v1/data?from={ms}&to={ms}&market={symbol}&exchange=binance&marketType=spot&frame=1m",
+			"POST /v1/sql with JSON body: {\"query\": \"SELECT * FROM klines LIMIT 10\"}",
+		},
+	)
 
 	// Wrap server with gzip compression middleware
 	handler := gzipMiddleware(server)
 
 	if err := http.ListenAndServe(fmt.Sprintf(":%d", *port), handler); err != nil {
-		log.Fatalf("Server failed: %v", err)
+		slog.Error("Server failed", "error", err)
+		os.Exit(1)
 	}
 }
 

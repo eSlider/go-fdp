@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"path/filepath"
 	"reflect"
@@ -237,7 +237,7 @@ func (s *Server) GetMarketHistory(w http.ResponseWriter, r *http.Request) {
 
 			startDownloadTime := time.Now()
 			infoCh, errCh := srv.DownloadAndTransform(asset)
-			log.Printf("Time elapsed downloading and transforming %s: %v", asset.Date.Format("2006-01-02"), time.Since(startDownloadTime))
+			slog.Info("Download and transform completed", "date", asset.Date.Format("2006-01-02"), "elapsed", time.Since(startDownloadTime))
 			for done := false; !done; {
 				select {
 				case info, ok := <-infoCh:
@@ -261,14 +261,13 @@ func (s *Server) GetMarketHistory(w http.ResponseWriter, r *http.Request) {
 		}(asset)
 	}
 	wg.Wait()
-	log.Printf("ETL and caching elapsed: %v", time.Since(start))
+	slog.Info("ETL and caching completed", "elapsed", time.Since(start))
 
 	// Query klines data - try to get as much data as possible even if some downloads failed
 
 	// Check if the query includes today's date
 	// midnightToday := time.Now().UTC().Truncate(24 * time.Hour)
 	// isQueryingToday := q.FromTime().Before(midnightToday) && q.ToTime().After(midnightToday)
-
 	asset := &binance.HistoryAsset{
 		MarketType: q.GetMarketType(),
 		Frequency:  binance.Daily,
@@ -291,7 +290,7 @@ func (s *Server) GetMarketHistory(w http.ResponseWriter, r *http.Request) {
 		})
 
 		if err != nil {
-			log.Printf("Failed to query today's hourly data: %v", err)
+			slog.Error("Failed to query today's hourly data", "error", err)
 			errs = append(errs, FieldError{
 				Message: fmt.Sprintf("Failed to query today's hourly data: %v", err),
 			})
@@ -311,7 +310,7 @@ func (s *Server) GetMarketHistory(w http.ResponseWriter, r *http.Request) {
 	})
 
 	if err != nil {
-		log.Printf("Failed to query historical data: %v", err)
+		slog.Error("Failed to query historical data", "error", err)
 		errs = append(errs, FieldError{
 			Message: fmt.Sprintf("Failed to query historical data: %v", err),
 		})
@@ -322,7 +321,7 @@ func (s *Server) GetMarketHistory(w http.ResponseWriter, r *http.Request) {
 	// If we have some data, return it even if there were some errors
 	if len(result) > 0 {
 		if len(errs) > 0 {
-			log.Printf("Partial data returned with %d errors: %v", len(errs), errs)
+			slog.Warn("Partial data returned", "errorCount", len(errs), "errors", errs)
 		}
 		s.WriteJson(w, result)
 		return
@@ -354,7 +353,7 @@ func (s *Server) handleSQL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("Received SQL query: %s", req.Query)
+	slog.Info("Received SQL query", "query", req.Query)
 	if req.Query == "" {
 		s.WriteError(w, errors.New("query is empty"), http.StatusBadRequest)
 		return
@@ -645,14 +644,13 @@ func (s *Server) CandlesFromDuckDB(q CandleDuckDBQuery) (result []*CandleRespons
 		decoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
 			DecodeHook: DecodeCandleResponseHook(),
 			Result:     candle,
-			// TagName:    "mapstructure",
 		})
 		if err != nil {
-			log.Fatalf("new decoder: %v", err)
+			return nil, fmt.Errorf("new decoder: %w", err)
 		}
 
 		if err := decoder.Decode(row.Data); err != nil {
-			log.Fatalf("decode: %v", err)
+			return nil, fmt.Errorf("decode: %w", err)
 		}
 
 		result = append(result, candle)
