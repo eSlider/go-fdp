@@ -1,5 +1,7 @@
+# syntax=docker/dockerfile:1.4
+
 # Build stage
-FROM golang:1.24-bookworm AS builder
+FROM golang:1.25-bookworm AS builder
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -12,13 +14,20 @@ WORKDIR /app
 
 # Copy go mod files first for better caching
 COPY go.mod go.sum ./
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
 
 # Copy source code
 COPY . .
 
-# Build the binary
-RUN CGO_ENABLED=1 GOOS=linux go build -o /app/bin/server ./main.go
+# Build the binary with parallel compilation and optimizations
+# -p uses all available CPU cores for package compilation
+# -ldflags="-s -w" strips debug symbols for faster linking
+# -trimpath removes file system paths from binary
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=1 GOOS=linux \
+    go build -p $(nproc) -ldflags="-s -w" -trimpath -o /app/bin/server ./main.go
 
 # Runtime stage
 FROM debian:bookworm-slim

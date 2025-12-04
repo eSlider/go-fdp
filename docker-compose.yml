@@ -4,6 +4,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      # Use all available CPU cores for faster builds
+      args:
+        - BUILDKIT_INLINE_CACHE=1
     container_name: binance-api
     ports:
       - "8082:8082"
@@ -23,7 +26,7 @@ services:
 
   # Loki - Log aggregation system
   loki:
-    image: grafana/loki:2.9.4
+    image: grafana/loki:3.3.2
     container_name: loki
     ports:
       - "3100:3100"
@@ -37,7 +40,7 @@ services:
 
   # Promtail - Log collector
   promtail:
-    image: grafana/promtail:2.9.4
+    image: grafana/promtail:3.3.2
     container_name: promtail
     volumes:
       - ./docker/promtail/promtail-config.yml:/etc/promtail/config.yml
