@@ -27,7 +27,12 @@ COPY . .
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=1 GOOS=linux \
-    go build -p $(nproc) -ldflags="-s -w" -trimpath -o /app/bin/server ./main.go
+    go build -p $(nproc) \
+    -ldflags="-s -w -extldflags=-static" \
+    -tags="netgo osusergo bundled" \
+    -trimpath \
+    -o /app/bin/server \
+    ./main.go
 
 # Runtime stage
 FROM debian:bookworm-slim

@@ -23,7 +23,20 @@ services:
       - "service=binance-api"
     networks:
       - monitoring
-
+    develop:
+      watch:
+        # Rebuild the image and recreate the container on any code change
+        - action: rebuild
+          path: .
+          ignore:
+            - bin/
+            - data/
+            - docker/
+            - var/
+            - .git/
+            - .gitignore
+            - docker-compose.yml
+            - README.md
   # Loki - Log aggregation system
   loki:
     image: grafana/loki:3.3.2
