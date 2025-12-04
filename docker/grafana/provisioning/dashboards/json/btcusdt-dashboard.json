@@ -67,6 +67,38 @@
           {
             "matcher": {
               "id": "byName",
+              "options": "closeTime"
+            },
+            "properties": [
+              {
+                "id": "custom.hideFrom",
+                "value": {
+                  "legend": true,
+                  "tooltip": true,
+                  "viz": true
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "openTime"
+            },
+            "properties": [
+              {
+                "id": "custom.hideFrom",
+                "value": {
+                  "legend": true,
+                  "tooltip": true,
+                  "viz": true
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
               "options": "high"
             },
             "properties": [
@@ -108,6 +140,60 @@
                 }
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "open"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#FF9830",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "volume"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#8AB8FF",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "custom.axisLabel",
+                "value": "Volume (BTC)"
+              },
+              {
+                "id": "custom.drawStyle",
+                "value": "bars"
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 50
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 0
+              },
+              {
+                "id": "unit",
+                "value": "short"
+              }
+            ]
           }
         ]
       },
@@ -137,13 +223,20 @@
       "pluginVersion": "11.0.0",
       "targets": [
         {
-          "columns": [],
+          "columns": [
+            {"selector": "openTime", "text": "openTime", "type": "time"},
+            {"selector": "open", "text": "open", "type": "number"},
+            {"selector": "high", "text": "high", "type": "number"},
+            {"selector": "low", "text": "low", "type": "number"},
+            {"selector": "close", "text": "close", "type": "number"},
+            {"selector": "volume", "text": "volume", "type": "number"}
+          ],
           "datasource": {
             "type": "yesoreyeram-infinity-datasource",
             "uid": "infinity"
           },
           "filters": [],
-          "format": "table",
+          "format": "timeseries",
           "global_query_id": "",
           "hide": false,
           "parser": "backend",
@@ -170,17 +263,6 @@
               }
             ],
             "fields": {}
-          }
-        },
-        {
-          "id": "sortBy",
-          "options": {
-            "fields": {},
-            "sort": [
-              {
-                "field": "openTime"
-              }
-            ]
           }
         }
       ],
@@ -237,13 +319,16 @@
       "pluginVersion": "11.0.0",
       "targets": [
         {
-          "columns": [],
+          "columns": [
+            {"selector": "openTime", "text": "openTime", "type": "timestamp_epoch_ms"},
+            {"selector": "close", "text": "close", "type": "number"}
+          ],
           "datasource": {
             "type": "yesoreyeram-infinity-datasource",
             "uid": "infinity"
           },
           "filters": [],
-          "format": "table",
+          "format": "timeseries",
           "global_query_id": "",
           "parser": "backend",
           "refId": "A",
@@ -258,32 +343,7 @@
         }
       ],
       "title": "Current BTCUSDT Price",
-      "transformations": [
-        {
-          "id": "convertFieldType",
-          "options": {
-            "conversions": [
-              {
-                "destinationType": "time",
-                "targetField": "openTime"
-              }
-            ],
-            "fields": {}
-          }
-        },
-        {
-          "id": "sortBy",
-          "options": {
-            "fields": {},
-            "sort": [
-              {
-                "desc": true,
-                "field": "openTime"
-              }
-            ]
-          }
-        }
-      ],
+      "transformations": [],
       "type": "stat"
     },
     {
@@ -337,13 +397,16 @@
       "pluginVersion": "11.0.0",
       "targets": [
         {
-          "columns": [],
+          "columns": [
+            {"selector": "openTime", "text": "openTime", "type": "timestamp_epoch_ms"},
+            {"selector": "high", "text": "high", "type": "number"}
+          ],
           "datasource": {
             "type": "yesoreyeram-infinity-datasource",
             "uid": "infinity"
           },
           "filters": [],
-          "format": "table",
+          "format": "timeseries",
           "global_query_id": "",
           "parser": "backend",
           "refId": "A",
@@ -411,13 +474,16 @@
       "pluginVersion": "11.0.0",
       "targets": [
         {
-          "columns": [],
+          "columns": [
+            {"selector": "openTime", "text": "openTime", "type": "timestamp_epoch_ms"},
+            {"selector": "low", "text": "low", "type": "number"}
+          ],
           "datasource": {
             "type": "yesoreyeram-infinity-datasource",
             "uid": "infinity"
           },
           "filters": [],
-          "format": "table",
+          "format": "timeseries",
           "global_query_id": "",
           "parser": "backend",
           "refId": "A",
@@ -485,13 +551,16 @@
       "pluginVersion": "11.0.0",
       "targets": [
         {
-          "columns": [],
+          "columns": [
+            {"selector": "openTime", "text": "openTime", "type": "timestamp_epoch_ms"},
+            {"selector": "volume", "text": "volume", "type": "number"}
+          ],
           "datasource": {
             "type": "yesoreyeram-infinity-datasource",
             "uid": "infinity"
           },
           "filters": [],
-          "format": "table",
+          "format": "timeseries",
           "global_query_id": "",
           "parser": "backend",
           "refId": "A",
@@ -572,7 +641,6 @@
   "timezone": "browser",
   "title": "BTCUSDT Price Monitor",
   "uid": "btcusdt-monitor",
-  "version": 1,
+  "version": 2,
   "weekStart": ""
 }
-

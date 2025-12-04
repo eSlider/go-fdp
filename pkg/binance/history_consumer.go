@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync-v3/pkg/data"
@@ -707,15 +709,25 @@ func (s *HistoryConsumer) readHourlyParquet(path string) ([]*Kline, error) {
 	return klines, nil
 }
 
-// writeHourlyParquet writes klines to an hourly parquet file
+// writeHourlyParquet writes klines to an hourly parquet file atomically
+// Uses temp file + rename to prevent race conditions with readers
 func (s *HistoryConsumer) writeHourlyParquet(path string, klines []*Kline) error {
-	writeCh, errCh := data.WriteParquet[HourlyParquetKline](path)
+	// Ensure directory exists
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create directory %s: %w", dir, err)
+	}
+
+	// Write to a temp file first to avoid race conditions
+	tempPath := path + ".tmp"
+	writeCh, errCh := data.WriteParquet[HourlyParquetKline](tempPath)
 
 	// Write all klines
 	for _, kline := range klines {
 		parquet, err := kline.ToHourlyParquet()
 		if err != nil {
 			close(writeCh)
+			os.Remove(tempPath) // Clean up temp file
 			return fmt.Errorf("failed to convert kline to parquet: %w", err)
 		}
 		writeCh <- parquet
@@ -724,7 +736,15 @@ func (s *HistoryConsumer) writeHourlyParquet(path string, klines []*Kline) error
 
 	// Wait for errors
 	for err := range errCh {
+		os.Remove(tempPath) // Clean up temp file
 		return fmt.Errorf("failed to write parquet: %w", err)
+	}
+
+	// Atomic rename: temp file -> final path
+	// This ensures readers only see complete files
+	if err := os.Rename(tempPath, path); err != nil {
+		os.Remove(tempPath) // Clean up temp file
+		return fmt.Errorf("failed to rename temp file: %w", err)
 	}
 
 	return nil

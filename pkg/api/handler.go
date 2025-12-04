@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"path/filepath"
 	"reflect"
 	"strconv"
 	"sync"
@@ -278,22 +279,21 @@ func (s *Server) GetMarketHistory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if asset.IsToday() {
-		// Query today's data from DuckDB cache first (more reliable)
-
-		todayResult, err := s.CandlesFromDuckDB(CandleDuckDBQuery{
+		// Query today's data from hourly parquet files
+		todayResult, err := s.CandlesFromHourlyParquet(CandleParquetQuery{
 			Market:     q.Market,
 			Frame:      string(q.GetFrame().String()),
 			Indicator:  q.Indicator,
 			MarketType: q.MarketType,
 			From:       q.FromTime().UnixMilli(),
 			To:         q.ToTime().UnixMilli(),
-			DuckDBPath: fs.GetModuleRelativePath(asset.TodayDuckDBPath()),
+			DataPath:   fs.GetModuleRelativePath("data"),
 		})
 
 		if err != nil {
-			log.Printf("Failed to query today's data: %v", err)
+			log.Printf("Failed to query today's hourly data: %v", err)
 			errs = append(errs, FieldError{
-				Message: fmt.Sprintf("Failed to query today's data: %v", err),
+				Message: fmt.Sprintf("Failed to query today's hourly data: %v", err),
 			})
 		} else {
 			result = append(result, todayResult...)
@@ -508,15 +508,14 @@ type CandleDuckDBQuery struct {
 func (s *Server) CandlesFromParquet(q CandleParquetQuery) (result []*CandleResponse, err error) {
 	q.DataPath = fs.GetModuleRelativePath("data")
 
-	// "?access_mode=READ_WRITE"
+	// Query historical data (excludes current/ folder which has different schema)
 	resCh, errCh := data.QueryParquets(s.db, `
 		SELECT
-			 make_timestamp(year, month, day,
-					date_part('hour', open_time),
-					date_part('minute', open_time),
-					date_part('second', open_time)) as openTime,
+			make_timestamp(year::BIGINT, month::BIGINT, day::BIGINT,
+				date_part('hour', open_time)::BIGINT,
+				date_part('minute', open_time)::BIGINT,
+				date_part('second', open_time)) as openTime,
 			openTime + interval '1' minute - interval '1' millisecond AS closeTime,
-			-- mtype, indicator, market, frame,
 
 			open_price as open,
 			close_price as close,
@@ -525,16 +524,68 @@ func (s *Server) CandlesFromParquet(q CandleParquetQuery) (result []*CandleRespo
 
 			volume as volume
 
-		FROM read_parquet('%<DataPath>s/*/*/*/*/*/*/*/*.parquet')
+		FROM read_parquet('%<DataPath>s/*/*/*/*/*/*/*/data.parquet')
 
 		WHERE mtype = '%<MarketType>s'
 			AND indicator = '%<Indicator>s'
 			AND market = '%<Market>s'
 			AND frame = '%<Frame>s'
-			AND( openTime BETWEEN epoch_ms(%<From>d) AND epoch_ms(%<To>d) )
+			AND openTime BETWEEN epoch_ms(%<From>d) AND epoch_ms(%<To>d)
 		ORDER BY
 			openTime DESC
 	`, q)
+
+	for {
+		select {
+		case err, ok := <-errCh:
+			if ok {
+				return nil, err
+			}
+			return result, nil
+		case entry, ok := <-resCh:
+			if !ok {
+				return
+			}
+			instance := new(CandleResponse)
+			if err := mapstructure.WeakDecode(entry, instance); err != nil {
+				return nil, err
+			}
+			result = append(result, instance)
+		}
+	}
+}
+
+// CandlesFromHourlyParquet returns candles from hourly parquet files (current day)
+func (s *Server) CandlesFromHourlyParquet(q CandleParquetQuery) (result []*CandleResponse, err error) {
+	// Construct path to hourly parquets: data/mtype=X/indicator=X/market=X/frame=X/year=X/month=X/day=X/current/*.parquet
+	now := time.Now().UTC()
+	hourlyPath := fmt.Sprintf("%s/mtype=%s/indicator=%s/market=%s/frame=%s/year=%d/month=%d/day=%d/current/*.parquet",
+		q.DataPath, q.MarketType, q.Indicator, q.Market, q.Frame,
+		now.Year(), int(now.Month()), now.Day())
+
+	// Check if any hourly files exist
+	if !fs.FileExists(filepath.Dir(hourlyPath)) {
+		return []*CandleResponse{}, nil
+	}
+
+	// Query hourly parquet files (atomic writes prevent reading incomplete files)
+	resCh, errCh := data.QueryParquets(s.db, `
+		SELECT
+			epoch_ms(open_time) as openTime,
+			epoch_ms(close_time) as closeTime,
+			open_price as open,
+			close_price as close,
+			high_price as high,
+			low_price as low,
+			volume as volume
+		FROM read_parquet('%<HourlyPath>s')
+		WHERE open_time BETWEEN %<From>d AND %<To>d
+		ORDER BY openTime DESC
+	`, struct {
+		HourlyPath string
+		From       int64
+		To         int64
+	}{hourlyPath, q.From, q.To})
 
 	for {
 		select {
