@@ -123,6 +123,7 @@ func (s *HistoryConsumer) List(path string) (ch chan ListResult) {
 	return ch
 }
 
+// DownloadAndTransform - download, extract, transform and load data from binance history assets
 func (s *HistoryConsumer) DownloadAndTransform(
 	asset *HistoryAsset,
 ) (
@@ -413,6 +414,7 @@ func (s *HistoryConsumer) DownloadToday(asset *HistoryAsset, errCh chan error, i
 	// Process data in hourly chunks from midnight to now
 	startTime := data.LastMomentOfYesterday()
 
+	// Fetch data from API in parallel
 	var wg sync.WaitGroup
 	for startTime.Before(now) {
 		start := startTime.UnixMicro()

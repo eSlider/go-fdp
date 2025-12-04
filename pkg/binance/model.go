@@ -329,7 +329,7 @@ func (q *HistoryAsset) IsHistoryLinkAvailable() (err error) {
 		return fmt.Errorf("date is required")
 	}
 
-	// If date is today, then there is no data for today
+	// If the date is today, then there is no data for today
 	if q.IsToday() {
 		return fmt.Errorf("no data for today")
 	}
