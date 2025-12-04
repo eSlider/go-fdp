@@ -47,8 +47,8 @@ WORKDIR /app
 # Copy binary from builder
 COPY --from=builder /app/bin/server /app/server
 
-# Create data directory
-RUN mkdir -p /app/data
+# Create data directory and symlink (for -trimpath compatibility)
+RUN mkdir -p /app/data && ln -s /app/data /data
 
 EXPOSE 8082
 

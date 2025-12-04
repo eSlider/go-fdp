@@ -14,6 +14,8 @@ import (
 	"sync-v3/pkg/fs"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
@@ -726,7 +728,8 @@ func (s *HistoryConsumer) writeHourlyParquet(path string, klines []*Kline) error
 	}
 
 	// Write to a temp file first to avoid race conditions
-	tempPath := path + ".tmp"
+	// Use unique suffix to prevent concurrent requests from interfering
+	tempPath := fmt.Sprintf("%s.%s.tmp", path, uuid.New().String()[:8])
 	writeCh, errCh := data.WriteParquet[HourlyParquetKline](tempPath)
 
 	// Write all klines

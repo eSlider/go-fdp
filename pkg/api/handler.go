@@ -279,6 +279,8 @@ func (s *Server) GetMarketHistory(w http.ResponseWriter, r *http.Request) {
 
 	if asset.IsToday() {
 		// Query today's data from hourly parquet files
+		// Use absolute path for DuckDB queries (relative paths break with -trimpath builds)
+		absDataPath, _ := filepath.Abs(fs.GetModuleRelativePath("data"))
 		todayResult, err := s.CandlesFromHourlyParquet(CandleParquetQuery{
 			Market:     q.Market,
 			Frame:      string(q.GetFrame().String()),
@@ -286,7 +288,7 @@ func (s *Server) GetMarketHistory(w http.ResponseWriter, r *http.Request) {
 			MarketType: q.MarketType,
 			From:       q.FromTime().UnixMilli(),
 			To:         q.ToTime().UnixMilli(),
-			DataPath:   fs.GetModuleRelativePath("data"),
+			DataPath:   absDataPath,
 		})
 
 		if err != nil {
@@ -505,7 +507,8 @@ type CandleDuckDBQuery struct {
 
 // CandlesFromParquet returns candles from parquet files
 func (s *Server) CandlesFromParquet(q CandleParquetQuery) (result []*CandleResponse, err error) {
-	q.DataPath = fs.GetModuleRelativePath("data")
+	// Use absolute path for DuckDB queries (relative paths break with -trimpath builds)
+	q.DataPath, _ = filepath.Abs(fs.GetModuleRelativePath("data"))
 
 	// Query historical data (excludes current/ folder which has different schema)
 	resCh, errCh := data.QueryParquets(s.db, `
