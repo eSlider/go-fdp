@@ -34,8 +34,8 @@ type CandleRequestV3 struct {
 	// 	- months	1M
 	Interval string `url:"interval" validate:"required"` // ENUM
 
-	StartTime *int64 `url:"startTime,omitempty"` //  Microsecond timestamp
-	EndTime   *int64 `url:"endTime,omitempty"`   //  Microsecond timestamp
+	StartTime *int64 `url:"startTime,omitempty"` // Millisecond timestamp
+	EndTime   *int64 `url:"endTime,omitempty"`   // Millisecond timestamp
 
 	TimeZone *string `url:"timeZone,omitempty"` // Default: 0 (UTC)
 	Limit    int64   `url:"limit,omitempty"`    // 	Default: 500; Maximum: 1000.

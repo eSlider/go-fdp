@@ -377,6 +377,26 @@ func (q *HistoryAsset) TodayDuckDBPath() string {
 		q.Frame)
 }
 
+// TodayParquetDir - returns the directory for hourly parquet files for current day caching
+func (q *HistoryAsset) TodayParquetDir() string {
+	now := time.Now().UTC()
+	return fmt.Sprintf(
+		"data/mtype=%s/indicator=%s/market=%s/frame=%s/year=%d/month=%d/day=%d/current",
+		q.MarketType,
+		q.Indicator,
+		q.Market,
+		q.Frame,
+		now.Year(),
+		int(now.Month()),
+		now.Day(),
+	)
+}
+
+// HourlyParquetPath - returns the path to an hourly parquet file for the given hour
+func (q *HistoryAsset) HourlyParquetPath(hour int) string {
+	return fmt.Sprintf("%s/hour_%02d.parquet", q.TodayParquetDir(), hour)
+}
+
 // IsToday - Check  date,s before now until midnight, handle using other api
 func (q *HistoryAsset) IsToday() bool {
 	return data.IsToday(q.Date)
@@ -511,6 +531,50 @@ type ParquetKline struct {
 	Low    float64 `parquet:"name=low_price, type=DOUBLE" json:"low_price"`
 	Close  float64 `parquet:"name=close_price, type=DOUBLE" json:"close_price"`
 	Volume float64 `parquet:"name=volume, type=DOUBLE" json:"volume"`
+}
+
+// HourlyParquetKline - parquet format for hourly cached klines with full timestamp
+type HourlyParquetKline struct {
+	OpenTime  int64   `parquet:"name=open_time,type=INT64" json:"open_time"`   // Full timestamp in milliseconds
+	CloseTime int64   `parquet:"name=close_time,type=INT64" json:"close_time"` // Full timestamp in milliseconds
+	Open      float64 `parquet:"name=open_price,type=DOUBLE" json:"open_price"`
+	High      float64 `parquet:"name=high_price,type=DOUBLE" json:"high_price"`
+	Low       float64 `parquet:"name=low_price,type=DOUBLE" json:"low_price"`
+	Close     float64 `parquet:"name=close_price,type=DOUBLE" json:"close_price"`
+	Volume    float64 `parquet:"name=volume,type=DOUBLE" json:"volume"`
+}
+
+// ToHourlyParquet - convert kline to hourly parquet format (preserves full timestamp)
+func (k *Kline) ToHourlyParquet() (*HourlyParquetKline, error) {
+	if k == nil {
+		return nil, errors.New("Kline is nil")
+	}
+	if k.OpenTime == 0 {
+		return nil, errors.New("open time is zero")
+	}
+
+	return &HourlyParquetKline{
+		OpenTime:  k.OpenTime,
+		CloseTime: k.CloseTime,
+		Open:      k.OpenPrice,
+		High:      k.HighPrice,
+		Low:       k.LowPrice,
+		Close:     k.ClosePrice,
+		Volume:    k.Volume,
+	}, nil
+}
+
+// ToKline - convert hourly parquet kline back to Kline
+func (h *HourlyParquetKline) ToKline() *Kline {
+	return &Kline{
+		OpenTime:   h.OpenTime,
+		CloseTime:  h.CloseTime,
+		OpenPrice:  h.Open,
+		HighPrice:  h.High,
+		LowPrice:   h.Low,
+		ClosePrice: h.Close,
+		Volume:     h.Volume,
+	}
 }
 
 // Parquet - convert kline to parquet format

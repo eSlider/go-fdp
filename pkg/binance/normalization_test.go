@@ -18,7 +18,7 @@ func TestNormalization(t *testing.T) {
 								Frequency:  Frequency(freq),
 								Indicator:  indicator,
 								Date:       time.Date(2021, 1, 1, 0, 0, 0, 0, time.UTC),
-								Frame:      Frame(frame),
+								Frame:      StringToFrame(frame),
 								Market:     market,
 							}
 

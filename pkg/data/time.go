@@ -53,27 +53,11 @@ func AnyTimestampToTime(ts int64) *time.Time {
 	return nil
 }
 
-// IsToday checks if the given time is today
+// IsToday checks if the given time is today (at or after midnight UTC today)
 func IsToday(t time.Time) bool {
-	// Variant 1:
-	// Check if the required asset.Date is before, then yesterday midnight 24:00
-	// midnightToday := time.Now().UTC().Truncate(24 * time.Hour)
-	// t.After(midnightToday) ||t.Equal(midnightToday)
-
-	// Variant 2:
-	// now := time.Now().UTC()
-	// todayMidnight := time.Date(
-	// 	now.Year(), now.Month(), now.Day(),
-	// 	0, 0, 0, 0,
-	// 	now.Location())
-	// .Add(-1 * time.Microsecond) // -1 microsecond
-
-	// isToday := q.Date.After(todayMidnight) || q.Date.Equal(todayMidnight)
-	// return isToday
-
-	// Variant 3:
-	// Check if required asset.Date is after now
-	return t.Before(LastMomentOfYesterday())
+	// A date is "today" if it's after the last moment of yesterday
+	// This means we should use the API instead of historical data archives
+	return !t.Before(LastMomentOfYesterday())
 }
 
 // LastMomentOfYesterday return's midnight.

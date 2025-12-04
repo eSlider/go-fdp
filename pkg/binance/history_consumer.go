@@ -134,13 +134,25 @@ func (s *HistoryConsumer) DownloadAndTransform(
 	errCh = make(chan error)
 
 	go func() {
-		// If it's today, get candles from current api
-		if asset.IsToday() {
-			s.DownloadToday(asset, errCh, infoCh)
-			return
-		}
 		defer close(infoCh)
 		defer close(errCh)
+
+		// If it's today, use hourly parquet caching
+		if asset.IsToday() {
+			candles, err := s.FetchAndCacheCurrentDay(asset)
+			if err != nil {
+				errCh <- fmt.Errorf("failed to fetch current day data: %w", err)
+				return
+			}
+
+			parquetDir := fs.GetModuleRelativePath(asset.TodayParquetDir())
+			infoCh <- &AssetETLInfo{
+				Path:   parquetDir,
+				Status: StatusParquetReady,
+				Info:   fmt.Sprintf("Cached %d candles in hourly parquet files", len(candles)),
+			}
+			return
+		}
 
 		if err := asset.IsHistoryLinkAvailable(); err != nil {
 			errCh <- errors.Join(ErrNotZipLink, fmt.Errorf("invalid asset: %s", asset))
@@ -513,4 +525,218 @@ func NewHistoryConsumer(ctx context.Context) (*HistoryConsumer, error) {
 		cfg:             cfg,
 		ctx:             ctx,
 	}, nil
+}
+
+// FetchAndCacheCurrentDay fetches current day data from API and caches into hourly parquet files
+func (s *HistoryConsumer) FetchAndCacheCurrentDay(asset *HistoryAsset) ([]*Kline, error) {
+	now := time.Now().UTC()
+	midnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+
+	var allCandles []*Kline
+
+	// Process each completed hour
+	currentHour := now.Hour()
+	for hour := 0; hour <= currentHour; hour++ {
+		hourStart := midnight.Add(time.Duration(hour) * time.Hour)
+		hourEnd := hourStart.Add(time.Hour)
+
+		// For the current hour, use current time as end
+		isCurrentHour := hour == currentHour
+		if isCurrentHour {
+			hourEnd = now
+		}
+
+		parquetPath := fs.GetModuleRelativePath(asset.HourlyParquetPath(hour))
+
+		// Check if we already have cached data for completed hours
+		if !isCurrentHour && fs.FileExists(parquetPath) {
+			// Read from cache for completed hours
+			candles, err := s.readHourlyParquet(parquetPath)
+			if err == nil && len(candles) > 0 {
+				allCandles = append(allCandles, candles...)
+				continue
+			}
+		}
+
+		// Fetch from API
+		candles, err := s.fetchHourData(asset, hourStart, hourEnd)
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch hour %d data: %w", hour, err)
+		}
+
+		if len(candles) > 0 {
+			// Cache to parquet file
+			if err := s.writeHourlyParquet(parquetPath, candles); err != nil {
+				return nil, fmt.Errorf("failed to write hourly parquet: %w", err)
+			}
+			allCandles = append(allCandles, candles...)
+		}
+	}
+
+	return allCandles, nil
+}
+
+// ReadCachedCurrentDay reads cached current day data from hourly parquet files
+func (s *HistoryConsumer) ReadCachedCurrentDay(asset *HistoryAsset) ([]*Kline, error) {
+	now := time.Now().UTC()
+	currentHour := now.Hour()
+
+	var allCandles []*Kline
+
+	for hour := 0; hour <= currentHour; hour++ {
+		parquetPath := fs.GetModuleRelativePath(asset.HourlyParquetPath(hour))
+
+		if !fs.FileExists(parquetPath) {
+			continue
+		}
+
+		candles, err := s.readHourlyParquet(parquetPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read hour %d parquet: %w", hour, err)
+		}
+
+		allCandles = append(allCandles, candles...)
+	}
+
+	return allCandles, nil
+}
+
+// RefreshLastHour refreshes the last hour's parquet file by fetching new data from API
+func (s *HistoryConsumer) RefreshLastHour(asset *HistoryAsset) error {
+	now := time.Now().UTC()
+	currentHour := now.Hour()
+	parquetPath := fs.GetModuleRelativePath(asset.HourlyParquetPath(currentHour))
+
+	// Read last candle time from existing file to avoid re-fetching all data
+	var lastOpenTime int64 = 0
+	if fs.FileExists(parquetPath) {
+		candles, err := s.readHourlyParquet(parquetPath)
+		if err == nil && len(candles) > 0 {
+			lastOpenTime = candles[len(candles)-1].OpenTime
+		}
+	}
+
+	// Calculate start time for API call
+	midnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	hourStart := midnight.Add(time.Duration(currentHour) * time.Hour)
+
+	// If we have existing data, start from last candle time
+	if lastOpenTime > 0 {
+		lastTime := data.AnyTimestampToTime(lastOpenTime)
+		if lastTime != nil && lastTime.After(hourStart) {
+			hourStart = *lastTime
+		}
+	}
+
+	// Fetch new data
+	newCandles, err := s.fetchHourData(asset, hourStart, now)
+	if err != nil {
+		return fmt.Errorf("failed to fetch new data: %w", err)
+	}
+
+	if len(newCandles) == 0 {
+		return nil // No new data
+	}
+
+	// Read existing candles and merge
+	var existingCandles []*Kline
+	if fs.FileExists(parquetPath) {
+		existingCandles, _ = s.readHourlyParquet(parquetPath)
+	}
+
+	// Merge: keep existing candles that are not in new data
+	merged := make(map[int64]*Kline)
+	for _, c := range existingCandles {
+		merged[c.OpenTime] = c
+	}
+	for _, c := range newCandles {
+		merged[c.OpenTime] = c // New data overwrites existing
+	}
+
+	// Convert back to slice and sort
+	var allCandles []*Kline
+	for _, c := range merged {
+		allCandles = append(allCandles, c)
+	}
+
+	// Sort by OpenTime
+	sortKlinesByOpenTime(allCandles)
+
+	// Write merged data back
+	return s.writeHourlyParquet(parquetPath, allCandles)
+}
+
+// fetchHourData fetches kline data for a specific time range
+func (s *HistoryConsumer) fetchHourData(asset *HistoryAsset, start, end time.Time) ([]*Kline, error) {
+	// Convert to milliseconds for API
+	startMs := start.UnixMilli()
+	endMs := end.UnixMilli()
+
+	return GetCurrentCandles(&CandleRequestV3{
+		Symbol:    asset.Market,
+		Interval:  asset.Frame.String(),
+		StartTime: &startMs,
+		EndTime:   &endMs,
+		Limit:     1000,
+	})
+}
+
+// readHourlyParquet reads klines from an hourly parquet file
+func (s *HistoryConsumer) readHourlyParquet(path string) ([]*Kline, error) {
+	recordCh, errCh := data.ReadParquet[HourlyParquetKline](path)
+
+	var klines []*Kline
+	for done := false; !done; {
+		select {
+		case record, ok := <-recordCh:
+			if !ok {
+				done = true
+				continue
+			}
+			// Convert HourlyParquetKline back to Kline
+			klines = append(klines, record.ToKline())
+		case err, ok := <-errCh:
+			if !ok {
+				done = true
+				continue
+			}
+			return nil, err
+		}
+	}
+
+	return klines, nil
+}
+
+// writeHourlyParquet writes klines to an hourly parquet file
+func (s *HistoryConsumer) writeHourlyParquet(path string, klines []*Kline) error {
+	writeCh, errCh := data.WriteParquet[HourlyParquetKline](path)
+
+	// Write all klines
+	for _, kline := range klines {
+		parquet, err := kline.ToHourlyParquet()
+		if err != nil {
+			close(writeCh)
+			return fmt.Errorf("failed to convert kline to parquet: %w", err)
+		}
+		writeCh <- parquet
+	}
+	close(writeCh)
+
+	// Wait for errors
+	for err := range errCh {
+		return fmt.Errorf("failed to write parquet: %w", err)
+	}
+
+	return nil
+}
+
+// sortKlinesByOpenTime sorts klines by OpenTime in ascending order
+func sortKlinesByOpenTime(klines []*Kline) {
+	for i := 0; i < len(klines)-1; i++ {
+		for j := i + 1; j < len(klines); j++ {
+			if klines[i].OpenTime > klines[j].OpenTime {
+				klines[i], klines[j] = klines[j], klines[i]
+			}
+		}
+	}
 }
