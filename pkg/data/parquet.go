@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"sync-v3/pkg/fs"
 	"time"
 
@@ -36,12 +37,15 @@ func WriteParquet[T any](
 	rCh = make(chan *T)
 	errCh = make(chan error)
 	go func() {
-		defer func() {
-			// Check if errCh is closed, otherwise close it
-			if _, ok := <-errCh; ok {
+		// Use sync.Once to ensure errCh is closed exactly once
+		var closeOnce sync.Once
+		closeErrCh := func() {
+			closeOnce.Do(func() {
 				close(errCh)
-			}
-		}()
+			})
+		}
+		defer closeErrCh()
+
 		// Remove existing file to overwrite
 		os.Remove(path)
 
@@ -86,9 +90,6 @@ func WriteParquet[T any](
 			errCh <- errors.Join(ErrWriteFile, fmt.Errorf("failed to close parquet file: %v", err))
 			return
 		}
-
-		close(errCh)
-		// fmt.Printf("Finished writing parquet:%s ", path)
 	}()
 	return
 }

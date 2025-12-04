@@ -712,6 +712,13 @@ func (s *HistoryConsumer) readHourlyParquet(path string) ([]*Kline, error) {
 // writeHourlyParquet writes klines to an hourly parquet file atomically
 // Uses temp file + rename to prevent race conditions with readers
 func (s *HistoryConsumer) writeHourlyParquet(path string, klines []*Kline) error {
+	// Convert to absolute path to avoid relative path resolution issues
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return fmt.Errorf("failed to get absolute path for %s: %w", path, err)
+	}
+	path = absPath
+
 	// Ensure directory exists
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -738,6 +745,11 @@ func (s *HistoryConsumer) writeHourlyParquet(path string, klines []*Kline) error
 	for err := range errCh {
 		os.Remove(tempPath) // Clean up temp file
 		return fmt.Errorf("failed to write parquet: %w", err)
+	}
+
+	// Verify temp file exists before renaming
+	if _, err := os.Stat(tempPath); os.IsNotExist(err) {
+		return fmt.Errorf("temp parquet file was not created: %s", tempPath)
 	}
 
 	// Atomic rename: temp file -> final path
