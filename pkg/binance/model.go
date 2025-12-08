@@ -421,8 +421,6 @@ type Kline struct {
 	TakerBuyVolume float64 `csv:"9"`
 	TakerBuyQuote  float64 `csv:"10"`
 	Ignore         float64 `csv:"11"`
-	// OpenTimeDate   *time.Time `csv:"-"`
-	// CloseTimeDate  *time.Time `csv:"-"`
 }
 
 func (k *Kline) String() string {
@@ -524,13 +522,12 @@ func (a *AggTrade) Parquet() (*ParquetAggTrade, error) {
 }
 
 type ParquetKline struct {
-	OpenTime int32 `parquet:"name=open_time,type=INT32, convertedtype=TIME_MILLIS" json:"open_time"`
-	// CloseTime int64   `parquet:"name=close_time,type=INT64, convertedtype=TIMESTAMP_MICROS" json:"close_time"`
-	Open   float64 `parquet:"name=open_price, type=DOUBLE" json:"open_price"`
-	High   float64 `parquet:"name=high_price, type=DOUBLE" json:"high_price"`
-	Low    float64 `parquet:"name=low_price, type=DOUBLE" json:"low_price"`
-	Close  float64 `parquet:"name=close_price, type=DOUBLE" json:"close_price"`
-	Volume float64 `parquet:"name=volume, type=DOUBLE" json:"volume"`
+	OpenTime int32   `parquet:"name=open_time,type=INT32, convertedtype=TIME_MILLIS" json:"open_time"`
+	Open     float64 `parquet:"name=open_price, type=DOUBLE" json:"open_price"`
+	High     float64 `parquet:"name=high_price, type=DOUBLE" json:"high_price"`
+	Low      float64 `parquet:"name=low_price, type=DOUBLE" json:"low_price"`
+	Close    float64 `parquet:"name=close_price, type=DOUBLE" json:"close_price"`
+	Volume   float64 `parquet:"name=volume, type=DOUBLE" json:"volume"`
 }
 
 // ToKline - convert parquet kline back to Kline
@@ -570,7 +567,6 @@ func (k *Kline) Parquet() (*ParquetKline, error) {
 		OpenTime: openTimeMs,
 		// The close time should be calculated from the open time and the interval between klines.
 		// For example: 1m = 60 seconds, so the close time should be: open time + 60 seconds - 1 millisecond.
-		// CloseTime: data.ToMicroseconds(k.CloseTime),
 		Open:   k.OpenPrice,
 		High:   k.HighPrice,
 		Low:    k.LowPrice,

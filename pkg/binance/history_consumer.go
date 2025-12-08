@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"sync-v3/pkg/data"
 	"sync-v3/pkg/fs"
 	"time"
@@ -96,7 +95,6 @@ func (s *HistoryConsumer) List(path string) (ch chan ListResult) {
 			Bucket:  aws.String(s.bucket),
 			MaxKeys: aws.Int32(100), // By default, 1000, but we need to iterate over all pages using callbacks
 			Prefix:  aws.String(path),
-			// StartAfter:               nil, // Optional, start after a key
 		})
 
 		// Iterate over pages
@@ -166,11 +164,6 @@ func (s *HistoryConsumer) DownloadAndTransform(
 		link := asset.SymbolDateAssetZipLink()
 		parquetPath := fs.GetModuleRelativePath(asset.ParquetPath())
 
-		// Delete parquet file if it exists
-		// if s.recreateParquet {
-		// 	os.Remove(parquetPath)
-		// }
-
 		// Check if a file already exists, then skip downloading, transforming and loading
 		if fs.FileExists(parquetPath) {
 			infoCh <- &AssetETLInfo{
@@ -228,6 +221,7 @@ func (s *HistoryConsumer) DownloadAndTransform(
 
 				select {
 				case parquetWriteCh <- parquet:
+					wroteKlines++
 				case err := <-prqErrCh:
 					errCh <- fmt.Errorf("error writing parquet: %v", err)
 					break loop
@@ -257,9 +251,6 @@ func (s *HistoryConsumer) Download(path string, w io.WriterAt) (n int64, err err
 	download, err := s.downloader.Download(s.ctx, w, &s3.GetObjectInput{
 		Bucket: aws.String(s.bucket),
 		Key:    aws.String(path),
-		// IfModifiedSince:            nil,
-		// IfUnmodifiedSince:          nil,
-		// VersionId:                  nil,
 	})
 	return download, err
 }
@@ -292,9 +283,7 @@ func (s *HistoryConsumer) CacheZip(link string) (info *AssetETLInfo) {
 		go func() {
 			if s.storeZIP {
 				// Store a downloaded file into a local directory save it as a zip file
-				// info.Persistance Status = StatusZipPersisting
 				if err := info.Buffer.Persist(path); err != nil {
-					// info.Err = fmt.Errorf("error storing zip file: %v", err)
 					fmt.Printf("error storing zip file: %v\n", err)
 				}
 			}
@@ -362,161 +351,11 @@ func (s *HistoryConsumer) GetAssets(asset *HistoryAsset) (info chan *AssetETLInf
 					}
 				}
 			}
-			// fmt.Printf("Found %d files\n", len(pths))
 		}
 		close(info)
 	}()
 
 	return info
-}
-
-func (s *HistoryConsumer) DownloadToday(asset *HistoryAsset, errCh chan error, infoCh chan *AssetETLInfo) {
-	duckDBPath := fs.GetModuleRelativePath(asset.TodayDuckDBPath())
-	//
-	// c, err := duckdb.NewConnector("", nil)
-	// if err != nil {
-	// 	log.Fatalf("could not initialize new connector: %s", err.Error())
-	// }
-	//
-	// con, err := c.Connect(context.Background())
-	// if err != nil {
-	// 	log.Fatalf("could not connect: %s", err.Error())
-	// }
-	//
-	// db := sql.OpenDB(c)
-	// if _, err := db.Exec(`CREATE TABLE users (name VARCHAR, age INTEGER)`); err != nil {
-	// 	log.Fatalf("could not create table users: %s", err.Error())
-	// }
-
-	// Open DuckDB file for today's cache
-	db, err := sql.Open("duckdb", duckDBPath)
-	if err != nil {
-		errCh <- fmt.Errorf("error opening DuckDB file %s: %v", duckDBPath, err)
-		return
-	}
-	// defer db.Close()
-
-	// Create table for caching kline data if it doesn't exist
-	createTableSQL := `
-		-- Crate candles table
-		CREATE TABLE IF NOT EXISTS candles
-		(
-			-- unique identifier
-			openTime timestamp primary key,
-			--closeTime TIMESTAMP GENERATED ALWAYS AS (openTime + INTERVAL '1 minute' + INTERVAL '-1 microsecond') ,
-
-			open double NOT NULL,
-			high double NOT NULL,
-			low double NOT NULL,
-			close double NOT NULL,
-
-			volume double NOT NULL
-		);
-
-		CREATE TABLE IF NOT EXISTS klines (
-			open_time BIGINT,
-			close_time BIGINT,
-			open_price DOUBLE,
-			high_price DOUBLE,
-			low_price DOUBLE,
-			close_price DOUBLE,
-			volume DOUBLE,
-			PRIMARY KEY (open_time)
-		);
-
-		-- Saves the last processed query
-		CHECKPOINT`
-	if _, err := db.Exec(createTableSQL); err != nil {
-		errCh <- fmt.Errorf("error creating klines table: %v", err)
-		return
-	}
-	if err := db.Close(); err != nil {
-		errCh <- fmt.Errorf("error closing DuckDB file: %v", err)
-	}
-	now := time.Now()
-	// Process data in hourly chunks from midnight to now
-	startTime := data.LastMomentOfYesterday()
-
-	// Fetch data from API in parallel
-	var wg sync.WaitGroup
-	for startTime.Before(now) {
-		start := startTime.UnixMicro()
-		end := startTime.Add(time.Hour).UnixMicro()
-
-		if end > now.UnixMicro() {
-			end = now.UnixMicro()
-		}
-
-		go func(
-			wg *sync.WaitGroup,
-			db *sql.DB,
-			errCh chan error,
-		) {
-			wg.Add(1)
-
-			// Check if we already have data for this time range
-			var lastOpenTime int
-			checkSQL := `
-				SELECT open_time
-				FROM klines
-				WHERE open_time >= ? AND open_time < ?
-				ORDER BY open_time DESC
-				LIMIT 1`
-			if err := db.QueryRow(checkSQL, start, end).Scan(&lastOpenTime); err != nil {
-				errCh <- fmt.Errorf("error checking existing data: %v", err)
-				return
-			}
-
-			lastOpenDate := data.AnyTimestampToTime(int64(lastOpenTime))
-			// fmt.Printf("Last open time: %s\n", lastOpenDate)
-			start = lastOpenDate.UnixMicro()
-
-			// Fetch data from API
-			klines, err := GetCurrentCandles(
-				&CandleRequestV3{
-					Symbol:    asset.Market,
-					Interval:  asset.Frame.String(),
-					StartTime: &start,
-					EndTime:   &end,
-					TimeZone:  nil,
-					Limit:     60,
-				},
-			)
-			if err != nil {
-				errCh <- fmt.Errorf("error getting current candle: %v", err)
-				return
-			}
-
-			// Store new data in DuckDB
-			for _, kline := range klines {
-				insertSQL := `
-					INSERT OR IGNORE INTO klines (open_time, close_time, open_price, high_price, low_price, close_price, volume)
-					VALUES (?, ?, ?, ?, ?, ?, ?)`
-				_, err = db.Exec(insertSQL,
-					kline.OpenTime*1000, // Convert to microseconds
-					kline.CloseTime*1000,
-					kline.OpenPrice,
-					kline.HighPrice,
-					kline.LowPrice,
-					kline.ClosePrice,
-					kline.Volume,
-				)
-				if err != nil {
-					errCh <- fmt.Errorf("error inserting kline data: %v", err)
-					return
-				}
-			}
-		}(&wg, db, errCh)
-
-		startTime = startTime.Add(time.Hour)
-	}
-	wg.Wait()
-
-	infoCh <- &AssetETLInfo{
-		Path:   duckDBPath,
-		Status: StatusParquetReady, // Reusing status for completion
-		Info:   fmt.Sprintf("Cached today's klines in DuckDB: %s", duckDBPath),
-	}
 }
 
 func NewHistoryConsumer(ctx context.Context) (*HistoryConsumer, error) {

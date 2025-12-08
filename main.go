@@ -2,6 +2,7 @@ package main
 
 import (
 	"compress/gzip"
+	"context"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -9,7 +10,12 @@ import (
 	"os"
 	"strings"
 
-	"sync-v3/pkg/api"
+	"sync-v3/internal/handler"
+	"sync-v3/internal/repository"
+	"sync-v3/internal/service"
+	"sync-v3/pkg/binance"
+
+	"github.com/gorilla/mux"
 )
 
 func main() {
@@ -22,27 +28,46 @@ func main() {
 	port := flag.Int("port", 8082, "port to listen on")
 	flag.Parse()
 
-	// Create API server
-	server, err := api.NewServer()
+	// Initialize Repository
+	repo, err := repository.NewDuckDBRepository()
 	if err != nil {
-		slog.Error("Failed to create API server", "error", err)
+		slog.Error("Failed to create repository", "error", err)
 		os.Exit(1)
 	}
-	defer server.Close()
+	defer repo.Close()
+
+	// Initialize History Consumer (ETL)
+	ctx := context.Background()
+	consumer, err := binance.NewHistoryConsumer(ctx)
+	if err != nil {
+		slog.Error("Failed to create history consumer", "error", err)
+		os.Exit(1)
+	}
+
+	// Initialize Service
+	svc := service.NewMarketService(repo, consumer)
+
+	// Initialize Handler
+	h := handler.NewMarketHandler(svc)
+
+	// Setup Router
+	router := mux.NewRouter()
+	h.RegisterRoutes(router)
+
+	// Wrap server with gzip compression middleware
+	httpHandler := gzipMiddleware(router)
 
 	// Start HTTP server
 	slog.Info("Starting server",
 		"port", *port,
 		"endpoints", []string{
 			"GET  /v1/data?from={ms}&to={ms}&market={symbol}&exchange=binance&marketType=spot&frame=1m",
-			"POST /v1/sql with JSON body: {\"query\": \"SELECT * FROM klines LIMIT 10\"}",
+			"GET  /v1/symbols",
+			"GET  /v1/markets",
 		},
 	)
 
-	// Wrap server with gzip compression middleware
-	handler := gzipMiddleware(server)
-
-	if err := http.ListenAndServe(fmt.Sprintf(":%d", *port), handler); err != nil {
+	if err := http.ListenAndServe(fmt.Sprintf(":%d", *port), httpHandler); err != nil {
 		slog.Error("Server failed", "error", err)
 		os.Exit(1)
 	}
