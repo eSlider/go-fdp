@@ -19,7 +19,7 @@ func TestCandlesMixedRange(t *testing.T) {
 			t.Fatalf("could not initialize binance service: %s", err.Error())
 		}
 
-		market := "BTCUSDT"
+		market := "BNBUSDT"
 		frame := Minute
 
 		// Get day before yesterday for historical data (ensure data is available)
@@ -149,7 +149,7 @@ func TestCandlesMixedRange(t *testing.T) {
 			t.Fatalf("could not initialize binance service: %s", err.Error())
 		}
 
-		market := "BTCUSDT"
+		market := "BNBUSDT"
 		frame := Minute
 
 		todayAsset := &HistoryAsset{
@@ -269,7 +269,7 @@ func TestCurrentDataCachePreventsAPICall(t *testing.T) {
 			t.Fatalf("could not initialize binance service: %s", err.Error())
 		}
 
-		market := "BTCUSDT"
+		market := "BNBUSDT"
 		frame := Minute
 
 		todayAsset := &HistoryAsset{

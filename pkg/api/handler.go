@@ -266,19 +266,11 @@ func (s *Server) GetMarketHistory(w http.ResponseWriter, r *http.Request) {
 	// Query klines data - try to get as much data as possible even if some downloads failed
 
 	// Check if the query includes today's date
-	// midnightToday := time.Now().UTC().Truncate(24 * time.Hour)
-	// isQueryingToday := q.FromTime().Before(midnightToday) && q.ToTime().After(midnightToday)
-	asset := &binance.HistoryAsset{
-		MarketType: q.GetMarketType(),
-		Frequency:  binance.Daily,
-		Frame:      q.GetFrame(),
-		Indicator:  binance.Klines,
-		Date:       *q.FromTime(),
-		Market:     q.Market,
-	}
+	midnightToday := time.Now().UTC().Truncate(24 * time.Hour)
+	isQueryingToday := (q.FromTime().Before(midnightToday.Add(24*time.Hour)) && q.ToTime().After(midnightToday)) || q.IsToday()
 
-	if asset.IsToday() {
-		// Query today's data from hourly parquet files
+	// Query today's data from hourly parquet files if needed
+	if isQueryingToday {
 		// Use absolute path for DuckDB queries (relative paths break with -trimpath builds)
 		absDataPath, _ := filepath.Abs(fs.GetModuleRelativePath("data"))
 		todayResult, err := s.CandlesFromHourlyParquet(CandleParquetQuery{
@@ -510,6 +502,10 @@ func (s *Server) CandlesFromParquet(q CandleParquetQuery) (result []*CandleRespo
 	// Use absolute path for DuckDB queries (relative paths break with -trimpath builds)
 	q.DataPath, _ = filepath.Abs(fs.GetModuleRelativePath("data"))
 
+	// Calculate interval
+	frame := binance.NewFrame(q.Frame)
+	intervalStr := fmt.Sprintf("%d ms", int64(time.Duration(frame)/time.Millisecond))
+
 	// Query historical data (excludes current/ folder which has different schema)
 	resCh, errCh := data.QueryParquets(s.db, `
 		SELECT
@@ -517,7 +513,7 @@ func (s *Server) CandlesFromParquet(q CandleParquetQuery) (result []*CandleRespo
 				date_part('hour', open_time)::BIGINT,
 				date_part('minute', open_time)::BIGINT,
 				date_part('second', open_time)) as openTime,
-			openTime + interval '1' minute - interval '1' millisecond AS closeTime,
+			openTime + interval '%<Interval>s' - interval '1' millisecond AS closeTime,
 
 			open_price as open,
 			close_price as close,
@@ -535,7 +531,25 @@ func (s *Server) CandlesFromParquet(q CandleParquetQuery) (result []*CandleRespo
 			AND openTime BETWEEN epoch_ms(%<From>d) AND epoch_ms(%<To>d)
 		ORDER BY
 			openTime DESC
-	`, q)
+	`, struct {
+		DataPath   string
+		MarketType string
+		Indicator  string
+		Market     string
+		Frame      string
+		From       int64
+		To         int64
+		Interval   string
+	}{
+		DataPath:   q.DataPath,
+		MarketType: q.MarketType,
+		Indicator:  q.Indicator,
+		Market:     q.Market,
+		Frame:      q.Frame,
+		From:       q.From,
+		To:         q.To,
+		Interval:   intervalStr,
+	})
 
 	for {
 		select {
@@ -570,24 +584,48 @@ func (s *Server) CandlesFromHourlyParquet(q CandleParquetQuery) (result []*Candl
 		return []*CandleResponse{}, nil
 	}
 
+	// Calculate interval
+	frame := binance.NewFrame(q.Frame)
+	intervalStr := fmt.Sprintf("%d ms", int64(time.Duration(frame)/time.Millisecond))
+
 	// Query hourly parquet files (atomic writes prevent reading incomplete files)
+	// Handle potential schema mismatch (INT32 vs INT64/TIME) using union_by_name=true and conditional logic
+	// Old data might have full timestamp (INT64), new data has offset (INT32/TIME)
+	// DuckDB reads TIME as time since 00:00:00, which behaves like interval/time.
+	// We need to handle TIME type explicitly if open_time is read as TIME.
 	resCh, errCh := data.QueryParquets(s.db, `
 		SELECT
-			epoch_ms(open_time) as openTime,
-			epoch_ms(close_time) as closeTime,
+			CASE
+				WHEN typeof(open_time) = 'TIME' THEN make_timestamp(%<Year>d, %<Month>d, %<Day>d, 0, 0, 0.0) + (date_part('epoch', open_time) * interval '1 second')
+				WHEN open_time::BIGINT < 86400000 THEN make_timestamp(%<Year>d, %<Month>d, %<Day>d, 0, 0, 0.0) + (open_time::BIGINT * interval '1 millisecond')
+				ELSE epoch_ms(open_time::BIGINT)
+			END as openTime,
+			openTime + interval '%<Interval>s' - interval '1 ms' as closeTime,
 			open_price as open,
 			close_price as close,
 			high_price as high,
 			low_price as low,
 			volume as volume
-		FROM read_parquet('%<HourlyPath>s')
-		WHERE open_time BETWEEN %<From>d AND %<To>d
+		FROM read_parquet('%<HourlyPath>s', union_by_name=true)
+		WHERE openTime BETWEEN epoch_ms(%<From>d) AND epoch_ms(%<To>d)
 		ORDER BY openTime DESC
 	`, struct {
 		HourlyPath string
 		From       int64
 		To         int64
-	}{hourlyPath, q.From, q.To})
+		Year       int
+		Month      int
+		Day        int
+		Interval   string
+	}{
+		HourlyPath: hourlyPath,
+		From:       q.From,
+		To:         q.To,
+		Year:       now.Year(),
+		Month:      int(now.Month()),
+		Day:        now.Day(),
+		Interval:   intervalStr,
+	})
 
 	for {
 		select {

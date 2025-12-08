@@ -35,7 +35,7 @@ func WriteParquet[T any](
 	errCh chan error,
 ) {
 	rCh = make(chan *T)
-	errCh = make(chan error)
+	errCh = make(chan error, 1)
 	go func() {
 		// Use sync.Once to ensure errCh is closed exactly once
 		var closeOnce sync.Once
