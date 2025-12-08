@@ -79,7 +79,11 @@ func (h *MarketHandler) GetMarkets(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, err, http.StatusInternalServerError)
 		return
 	}
-	h.writeJSON(w, markets)
+	response := make([]map[string]string, len(markets))
+	for i, v := range markets {
+		response[i] = map[string]string{"name": v}
+	}
+	h.writeJSON(w, response)
 }
 
 func (h *MarketHandler) GetSymbols(w http.ResponseWriter, r *http.Request) {
@@ -88,7 +92,11 @@ func (h *MarketHandler) GetSymbols(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, err, http.StatusInternalServerError)
 		return
 	}
-	h.writeJSON(w, symbols)
+	response := make([]map[string]string, len(symbols))
+	for i, v := range symbols {
+		response[i] = map[string]string{"symbol": v}
+	}
+	h.writeJSON(w, response)
 }
 
 func (h *MarketHandler) bindAndValidate(r *http.Request, dest any) error {
