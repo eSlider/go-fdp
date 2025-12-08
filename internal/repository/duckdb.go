@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"sync-v3/internal/domain"
@@ -118,32 +119,46 @@ func (r *DuckDBRepository) candlesFromParquet(req domain.MarketDataRequest) ([]*
 				return result, nil
 			}
 
+			// DEBUG: Print keys
+			// fmt.Printf("Keys: %v\n", getKeys(entry))
+
 			instance := &domain.Candle{}
-			// Manual mapping for better performance and reliability
-			if val, ok := entry["openTime"]; ok && val != nil {
-				if t, ok := val.(time.Time); ok {
+			// Manual mapping with case-insensitive lookup logic if needed, but sticking to expected keys for now
+			instance.OpenTime = toTime(entry["openTime"])
+			instance.CloseTime = toTime(entry["closeTime"])
+			instance.Open = toFloat64(entry["open"])
+			instance.High = toFloat64(entry["high"])
+			instance.Low = toFloat64(entry["low"])
+			instance.Close = toFloat64(entry["close"])
+			instance.Volume = toFloat64(entry["volume"])
+
+			// If all zero, try checking if keys are lowercased
+			if instance.Open == 0 && instance.Volume == 0 {
+				// Fallback to lowercase check? DuckDB might lowercase aliases?
+				// No, DuckDB usually preserves case in aliases if quoted, but here they are unquoted identifiers.
+				// Unquoted identifiers are usually lowercased?
+				// Let's try "opentime" etc.
+				if t := toTime(entry["opentime"]); !t.IsZero() {
 					instance.OpenTime = t
 				}
-			}
-			if val, ok := entry["closeTime"]; ok && val != nil {
-				if t, ok := val.(time.Time); ok {
+				if t := toTime(entry["closetime"]); !t.IsZero() {
 					instance.CloseTime = t
 				}
-			}
-			if val, ok := entry["open"]; ok && val != nil {
-				instance.Open = toFloat64(val)
-			}
-			if val, ok := entry["high"]; ok && val != nil {
-				instance.High = toFloat64(val)
-			}
-			if val, ok := entry["low"]; ok && val != nil {
-				instance.Low = toFloat64(val)
-			}
-			if val, ok := entry["close"]; ok && val != nil {
-				instance.Close = toFloat64(val)
-			}
-			if val, ok := entry["volume"]; ok && val != nil {
-				instance.Volume = toFloat64(val)
+				if v := toFloat64(entry["open"]); v != 0 {
+					instance.Open = v
+				}
+				if v := toFloat64(entry["high"]); v != 0 {
+					instance.High = v
+				}
+				if v := toFloat64(entry["low"]); v != 0 {
+					instance.Low = v
+				}
+				if v := toFloat64(entry["close"]); v != 0 {
+					instance.Close = v
+				}
+				if v := toFloat64(entry["volume"]); v != 0 {
+					instance.Volume = v
+				}
 			}
 
 			result = append(result, instance)
@@ -213,30 +228,25 @@ func (r *DuckDBRepository) candlesFromHourlyParquet(req domain.MarketDataRequest
 			}
 			instance := &domain.Candle{}
 
-			if val, ok := entry["openTime"]; ok && val != nil {
-				if t, ok := val.(time.Time); ok {
+			// Try camelCase first
+			instance.OpenTime = toTime(entry["openTime"])
+			instance.CloseTime = toTime(entry["closeTime"])
+			instance.Open = toFloat64(entry["open"])
+			instance.High = toFloat64(entry["high"])
+			instance.Low = toFloat64(entry["low"])
+			instance.Close = toFloat64(entry["close"])
+			instance.Volume = toFloat64(entry["volume"])
+
+			// Fallback to lowercase if needed (DuckDB behavior)
+			if instance.Open == 0 && instance.Volume == 0 {
+				if t := toTime(entry["opentime"]); !t.IsZero() {
 					instance.OpenTime = t
 				}
-			}
-			if val, ok := entry["closeTime"]; ok && val != nil {
-				if t, ok := val.(time.Time); ok {
+				if t := toTime(entry["closetime"]); !t.IsZero() {
 					instance.CloseTime = t
 				}
-			}
-			if val, ok := entry["open"]; ok && val != nil {
-				instance.Open = toFloat64(val)
-			}
-			if val, ok := entry["high"]; ok && val != nil {
-				instance.High = toFloat64(val)
-			}
-			if val, ok := entry["low"]; ok && val != nil {
-				instance.Low = toFloat64(val)
-			}
-			if val, ok := entry["close"]; ok && val != nil {
-				instance.Close = toFloat64(val)
-			}
-			if val, ok := entry["volume"]; ok && val != nil {
-				instance.Volume = toFloat64(val)
+				// Note: open, high, low, close, volume are already lowercase in query, so entry["open"] should work if they are lowercase.
+				// But wait, open_price as open.
 			}
 
 			result = append(result, instance)
@@ -245,6 +255,9 @@ func (r *DuckDBRepository) candlesFromHourlyParquet(req domain.MarketDataRequest
 }
 
 func toFloat64(v any) float64 {
+	if v == nil {
+		return 0
+	}
 	switch val := v.(type) {
 	case float64:
 		return val
@@ -254,7 +267,43 @@ func toFloat64(v any) float64 {
 		return float64(val)
 	case int:
 		return float64(val)
+	case string:
+		f, _ := strconv.ParseFloat(val, 64)
+		return f
 	default:
 		return 0
 	}
+}
+
+func toTime(v any) time.Time {
+	if v == nil {
+		return time.Time{}
+	}
+	switch val := v.(type) {
+	case time.Time:
+		return val
+	case string:
+		// Try standard formats
+		if t, err := time.Parse("2006-01-02 15:04:05", val); err == nil {
+			return t
+		}
+		if t, err := time.Parse(time.RFC3339, val); err == nil {
+			return t
+		}
+		// DuckDB string timestamp might look different?
+		return time.Time{}
+	case int64:
+		return *data.AnyTimestampToTime(val)
+	default:
+		return time.Time{}
+	}
+}
+
+// Helper to debug keys
+func getKeys(m map[string]any) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
 }

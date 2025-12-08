@@ -202,21 +202,8 @@ func QueryParquets(
 		for rows.Next() {
 			// Create a slice of interface{} to hold the values
 			valuePtrs := make([]any, len(columns))
-			for i, name := range columns {
-				// if string contain time or timestamp or date, then it should be int
-				if strings.Contains(name, "time") ||
-					strings.Contains(name, "Time") ||
-					strings.Contains(name, "Date") ||
-					strings.Contains(name, "date") {
-					valuePtrs[i] = new(ResponseDate)
-					// valuePtrs[i] = new(int)
-				} else if strings.Contains(name, "volume") ||
-					strings.Contains(name, "float") ||
-					strings.Contains(name, "price") {
-					valuePtrs[i] = new(float64)
-				} else {
-					valuePtrs[i] = new(string)
-				}
+			for i := range columns {
+				valuePtrs[i] = new(any)
 			}
 
 			// Scan into the slice
@@ -228,7 +215,13 @@ func QueryParquets(
 			// Create map
 			valueMap := make(map[string]any)
 			for i, name := range columns {
-				valueMap[name] = valuePtrs[i]
+				val := *(valuePtrs[i].(*any))
+				// Handle []byte to string conversion if needed
+				if b, ok := val.([]byte); ok {
+					valueMap[name] = string(b)
+				} else {
+					valueMap[name] = val
+				}
 			}
 			resCh <- valueMap
 		}
