@@ -355,6 +355,20 @@ func (q *HistoryAsset) IsHistoryLinkAvailable() (err error) {
 // ParquetPath - returns parquet file path
 //   - Create link to work with hive partitioning
 func (q *HistoryAsset) ParquetPath() string {
+	// For aggTrades, don't include frame in the path since they don't have frames
+	if q.Indicator == AggTrades {
+		dest := fmt.Sprintf(
+			"data/mtype=%s/indicator=%s/market=%s/year=%d/month=%d/day=%d/data.parquet",
+			q.MarketType,
+			q.Indicator,
+			q.Market,
+			q.Date.Year(),
+			int(q.Date.Month()),
+			q.Date.Day(),
+		)
+		return dest
+	}
+
 	dest := fmt.Sprintf(
 		"data/mtype=%s/indicator=%s/market=%s/frame=%s/year=%d/month=%d/day=%d/data.parquet",
 		q.MarketType,
@@ -370,6 +384,13 @@ func (q *HistoryAsset) ParquetPath() string {
 
 // TodayDuckDBPath - returns the path to the DuckDB file for today's cached data
 func (q *HistoryAsset) TodayDuckDBPath() string {
+	// For aggTrades, don't include frame in the path since they don't have frames
+	if q.Indicator == AggTrades {
+		return fmt.Sprintf("data/mtype=%s/indicator=%s/market=%s/today.duckdb",
+			q.MarketType,
+			q.Indicator,
+			q.Market)
+	}
 	return fmt.Sprintf("data/mtype=%s/indicator=%s/market=%s/frame=%s/today.duckdb",
 		q.MarketType,
 		q.Indicator,
@@ -380,6 +401,18 @@ func (q *HistoryAsset) TodayDuckDBPath() string {
 // TodayParquetDir - returns the directory for hourly parquet files for current day caching
 func (q *HistoryAsset) TodayParquetDir() string {
 	now := time.Now().UTC()
+	// For aggTrades, don't include frame in the path since they don't have frames
+	if q.Indicator == AggTrades {
+		return fmt.Sprintf(
+			"data/mtype=%s/indicator=%s/market=%s/year=%d/month=%d/day=%d/current",
+			q.MarketType,
+			q.Indicator,
+			q.Market,
+			now.Year(),
+			int(now.Month()),
+			now.Day(),
+		)
+	}
 	return fmt.Sprintf(
 		"data/mtype=%s/indicator=%s/market=%s/frame=%s/year=%d/month=%d/day=%d/current",
 		q.MarketType,
@@ -479,6 +512,7 @@ func (k *Kline) UnmarshalJSON(data []byte) error {
 //	743,309.77000000,0.35856000,804,805,1502958744048,False,True
 //
 // Ref: https://data.binance.vision/?prefix=data/spot/daily/aggTrades/
+// Example ZIP-File: https://data.binance.vision/data/spot/daily/aggTrades/BTCUSDT/BTCUSDT-aggTrades-2025-12-10.zip
 // and Spot API docs: https://binance-docs.github.io/apidocs/spot/en/#compressed-aggregate-trades-list
 type AggTrade struct {
 	AggTradeID   int64   `csv:"0"` // a (Aggregate tradeId)

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"time"
 
 	"sync-v3/internal/domain"
 	"sync-v3/pkg/binance"
@@ -12,10 +13,10 @@ import (
 
 type MarketService struct {
 	repo            domain.MarketRepository
-	historyConsumer *binance.HistoryConsumer
+	historyConsumer domain.HistoryConsumer
 }
 
-func NewMarketService(repo domain.MarketRepository, consumer *binance.HistoryConsumer) *MarketService {
+func NewMarketService(repo domain.MarketRepository, consumer domain.HistoryConsumer) *MarketService {
 	return &MarketService{
 		repo:            repo,
 		historyConsumer: consumer,
@@ -35,6 +36,56 @@ func (s *MarketService) GetMarketHistory(ctx context.Context, req domain.MarketD
 	return s.repo.GetCandles(ctx, req)
 }
 
+func (s *MarketService) GetAggTrades(ctx context.Context, req domain.MarketDataRequest) ([]*domain.AggTrade, error) {
+	// For today's data, fetch directly from API to ensure we have fresh data
+	// This bypasses cache issues when parquet files can't be written
+	if req.IsToday() {
+		return s.fetchAggTradesFromAPI(ctx, req)
+	}
+
+	// 1. Ensure data is available (ETL)
+	if err := s.ensureDataAvailable(ctx, req); err != nil {
+		slog.Error("Failed to ensure data availability", "error", err)
+	}
+
+	// 2. Query historical data from repository
+	return s.repo.GetAggTrades(ctx, req)
+}
+
+// fetchAggTradesFromAPI fetches aggTrades directly from Binance API for today's queries
+func (s *MarketService) fetchAggTradesFromAPI(ctx context.Context, req domain.MarketDataRequest) ([]*domain.AggTrade, error) {
+	startMs := req.From.UnixMilli()
+	endMs := req.To.UnixMilli()
+
+	apiReq := &binance.AggTradeRequestV3{
+		Symbol:    req.Market,
+		StartTime: &startMs,
+		EndTime:   &endMs,
+		Limit:     1000,
+	}
+
+	trades, err := binance.GetCurrentAggTrades(apiReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch aggTrades from API: %w", err)
+	}
+
+	// Convert binance.AggTrade to domain.AggTrade
+	result := make([]*domain.AggTrade, len(trades))
+	for i, t := range trades {
+		result[i] = &domain.AggTrade{
+			ID:           t.AggTradeID,
+			Price:        t.Price,
+			Quantity:     t.Quantity,
+			FirstTradeID: t.FirstTradeID,
+			LastTradeID:  t.LastTradeID,
+			Time:         time.UnixMilli(t.Timestamp),
+			IsBuyerMaker: t.IsBuyerMaker,
+		}
+	}
+
+	return result, nil
+}
+
 func (s *MarketService) ensureDataAvailable(ctx context.Context, req domain.MarketDataRequest) error {
 	var wg sync.WaitGroup
 	var errs []error
@@ -48,10 +99,16 @@ func (s *MarketService) ensureDataAvailable(ctx context.Context, req domain.Mark
 		asset := &binance.HistoryAsset{
 			MarketType: binance.NewMarketType(req.MarketType.String()),
 			Frequency:  binance.Daily,
-			Frame:      binance.NewFrame(req.Frame.String()),
-			Indicator:  binance.Klines,
+			Indicator:  binance.Indicator(req.Indicator.String()),
 			Date:       cur,
 			Market:     req.Market,
+		}
+
+		// Set frame only for klines, not for aggTrades
+		if req.Indicator == domain.Klines {
+			asset.Frame = binance.NewFrame(req.Frame.String())
+		} else {
+			asset.Frame = binance.NoFrame
 		}
 
 		wg.Add(1)

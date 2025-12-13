@@ -141,17 +141,32 @@ func (s *HistoryConsumer) DownloadAndTransform(
 
 		// If it's today, use hourly parquet caching
 		if asset.IsToday() {
-			candles, err := s.FetchAndCacheCurrentDay(asset)
-			if err != nil {
-				errCh <- fmt.Errorf("failed to fetch current day data: %w", err)
-				return
-			}
-
-			parquetDir := fs.GetModuleRelativePath(asset.TodayParquetDir())
-			infoCh <- &AssetETLInfo{
-				Path:   parquetDir,
-				Status: StatusParquetReady,
-				Info:   fmt.Sprintf("Cached %d candles in hourly parquet files", len(candles)),
+			switch asset.Indicator {
+			case AggTrades:
+				trades, err := s.FetchAndCacheCurrentDayAggTrades(asset)
+				if err != nil {
+					errCh <- fmt.Errorf("failed to fetch current day aggTrades: %w", err)
+					return
+				}
+				parquetDir := fs.GetModuleRelativePath(asset.TodayParquetDir())
+				infoCh <- &AssetETLInfo{
+					Path:   parquetDir,
+					Status: StatusParquetReady,
+					Info:   fmt.Sprintf("Cached %d aggTrades in hourly parquet files", len(trades)),
+				}
+			default:
+				// Klines
+				candles, err := s.FetchAndCacheCurrentDay(asset)
+				if err != nil {
+					errCh <- fmt.Errorf("failed to fetch current day data: %w", err)
+					return
+				}
+				parquetDir := fs.GetModuleRelativePath(asset.TodayParquetDir())
+				infoCh <- &AssetETLInfo{
+					Path:   parquetDir,
+					Status: StatusParquetReady,
+					Info:   fmt.Sprintf("Cached %d candles in hourly parquet files", len(candles)),
+				}
 			}
 			return
 		}
@@ -200,43 +215,83 @@ func (s *HistoryConsumer) DownloadAndTransform(
 				}
 			}
 
-			// asset.Indicator == AggTrades
-			// if asset.Indicator == Klines {
-			// csvReadCh, csvErrCh := data.ReadHeaderlessCSVChan[Kline](csvBuffer)
-			parquetWriteCh, prqErrCh := data.WriteParquet[ParquetKline](parquetPath)
-			wroteKlines := 0
+			// Handle different indicators
+			switch asset.Indicator {
+			case AggTrades:
+				parquetWriteCh, prqErrCh := data.WriteParquet[ParquetAggTrade](parquetPath)
+				wroteAggTrades := 0
 
-			// Read CSV and write to parquet
-		loop:
-			for row := range data.ReadHeaderlessCSV[Kline](csvBuffer) {
-				if row.Error != nil {
-					errCh <- fmt.Errorf("error reading csv: %v", row.Error)
-					continue
-				}
-				parquet, err := row.Value.Parquet()
-				if err != nil {
-					errCh <- fmt.Errorf("error converting csv entry to parquet: %v", err)
-					continue
-				}
+				// Read CSV and write to parquet
+			aggTradesLoop:
+				for row := range data.ReadHeaderlessCSV[AggTrade](csvBuffer) {
+					if row.Error != nil {
+						errCh <- fmt.Errorf("error reading csv: %v", row.Error)
+						continue
+					}
+					parquet, err := row.Value.Parquet()
+					if err != nil {
+						errCh <- fmt.Errorf("error converting csv entry to parquet: %v", err)
+						continue
+					}
 
-				select {
-				case parquetWriteCh <- parquet:
-					wroteKlines++
-				case err := <-prqErrCh:
+					select {
+					case parquetWriteCh <- parquet:
+						wroteAggTrades++
+					case err := <-prqErrCh:
+						errCh <- fmt.Errorf("error writing parquet: %v", err)
+						break aggTradesLoop
+					}
+				}
+				close(parquetWriteCh)
+
+				for err := range prqErrCh {
 					errCh <- fmt.Errorf("error writing parquet: %v", err)
-					break loop
 				}
-			}
-			close(parquetWriteCh)
 
-			for err := range prqErrCh {
-				errCh <- fmt.Errorf("error writing parquet: %v", err)
-			}
+				infoCh <- &AssetETLInfo{
+					Path:   parquetPath,
+					Status: StatusParquetReady,
+					Info:   fmt.Sprintf("Wrote %d aggTrades to parquet", wroteAggTrades),
+				}
+			case Klines:
+				parquetWriteCh, prqErrCh := data.WriteParquet[ParquetKline](parquetPath)
+				wroteKlines := 0
 
-			infoCh <- &AssetETLInfo{
-				Path:   parquetPath,
-				Status: StatusParquetReady,
-				Info:   fmt.Sprintf("Wrote %d parquetKlines to parquet", wroteKlines),
+				// Read CSV and write to parquet
+			klinesLoop:
+				for row := range data.ReadHeaderlessCSV[Kline](csvBuffer) {
+					if row.Error != nil {
+						errCh <- fmt.Errorf("error reading csv: %v", row.Error)
+						continue
+					}
+					parquet, err := row.Value.Parquet()
+					if err != nil {
+						errCh <- fmt.Errorf("error converting csv entry to parquet: %v", err)
+						continue
+					}
+
+					select {
+					case parquetWriteCh <- parquet:
+						wroteKlines++
+					case err := <-prqErrCh:
+						errCh <- fmt.Errorf("error writing parquet: %v", err)
+						break klinesLoop
+					}
+				}
+				close(parquetWriteCh)
+
+				for err := range prqErrCh {
+					errCh <- fmt.Errorf("error writing parquet: %v", err)
+				}
+
+				infoCh <- &AssetETLInfo{
+					Path:   parquetPath,
+					Status: StatusParquetReady,
+					Info:   fmt.Sprintf("Wrote %d klines to parquet", wroteKlines),
+				}
+			default:
+				errCh <- fmt.Errorf("unsupported indicator: %s", asset.Indicator)
+				return
 			}
 		}
 
@@ -439,6 +494,272 @@ func (s *HistoryConsumer) FetchAndCacheCurrentDay(asset *HistoryAsset) ([]*Kline
 	}
 
 	return allCandles, nil
+}
+
+// FetchAndCacheCurrentDayAggTrades fetches current day aggTrades from API and caches into hourly parquet files
+// Returns data even if caching fails (logs warnings for cache errors)
+func (s *HistoryConsumer) FetchAndCacheCurrentDayAggTrades(asset *HistoryAsset) ([]*AggTrade, error) {
+	now := time.Now().UTC()
+	midnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+
+	var allTrades []*AggTrade
+
+	// Process each completed hour
+	currentHour := now.Hour()
+	for hour := 0; hour <= currentHour; hour++ {
+		hourStart := midnight.Add(time.Duration(hour) * time.Hour)
+		hourEnd := hourStart.Add(time.Hour)
+
+		// For the current hour, use current time as end
+		isCurrentHour := hour == currentHour
+		if isCurrentHour {
+			hourEnd = now
+		}
+
+		parquetPath := fs.GetModuleRelativePath(asset.HourlyParquetPath(hour))
+
+		// Check if we already have cached data for completed hours
+		if !isCurrentHour && fs.FileExists(parquetPath) {
+			// Read from cache for completed hours
+			trades, err := s.readHourlyAggTradesParquet(parquetPath)
+			if err == nil && len(trades) > 0 {
+				allTrades = append(allTrades, trades...)
+				continue
+			}
+		}
+
+		if isCurrentHour {
+			// Refresh last hour - fetch directly from API
+			trades, err := s.fetchCurrentHourAggTrades(asset)
+			if err != nil {
+				fmt.Printf("Warning: failed to fetch current hour aggTrades: %v\n", err)
+			} else {
+				allTrades = append(allTrades, trades...)
+				// Try to cache (best effort, don't fail on error)
+				if err := s.writeHourlyAggTradesParquet(parquetPath, trades); err != nil {
+					fmt.Printf("Warning: failed to cache current hour aggTrades: %v\n", err)
+				}
+			}
+			continue
+		}
+
+		// Fetch from API for completed hours (if not cached)
+		trades, err := s.fetchHourAggTradesData(asset, hourStart, hourEnd)
+		if err != nil {
+			fmt.Printf("Warning: failed to fetch hour %d aggTrades: %v\n", hour, err)
+			continue // Continue with other hours
+		}
+
+		if len(trades) > 0 {
+			allTrades = append(allTrades, trades...)
+			// Try to cache (best effort, don't fail on error)
+			if err := s.writeHourlyAggTradesParquet(parquetPath, trades); err != nil {
+				fmt.Printf("Warning: failed to cache hour %d aggTrades: %v\n", hour, err)
+			}
+		}
+	}
+
+	return allTrades, nil
+}
+
+// fetchCurrentHourAggTrades fetches aggTrades for the current hour from API
+func (s *HistoryConsumer) fetchCurrentHourAggTrades(asset *HistoryAsset) ([]*AggTrade, error) {
+	now := time.Now().UTC()
+	midnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	currentHour := now.Hour()
+	hourStart := midnight.Add(time.Duration(currentHour) * time.Hour)
+
+	return s.fetchHourAggTradesData(asset, hourStart, now)
+}
+
+// RefreshLastHourAggTrades refreshes the last hour's aggTrades parquet file by fetching new data from API
+func (s *HistoryConsumer) RefreshLastHourAggTrades(asset *HistoryAsset) error {
+	now := time.Now().UTC()
+	currentHour := now.Hour()
+	parquetPath := fs.GetModuleRelativePath(asset.HourlyParquetPath(currentHour))
+
+	// Read last trade ID from existing file to avoid re-fetching all data
+	var lastTradeID int64 = 0
+	midnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	hourStart := midnight.Add(time.Duration(currentHour) * time.Hour)
+
+	if fs.FileExists(parquetPath) {
+		trades, err := s.readHourlyAggTradesParquet(parquetPath)
+		if err == nil && len(trades) > 0 {
+			// Get the last trade to continue from
+			lastTradeID = trades[len(trades)-1].AggTradeID
+		}
+	}
+
+	// Fetch new data
+	var newTrades []*AggTrade
+	var err error
+
+	if lastTradeID > 0 {
+		// Fetch from last trade ID
+		newTrades, err = s.fetchAggTradesFromID(asset, lastTradeID+1)
+	} else {
+		// Fetch from hour start
+		newTrades, err = s.fetchHourAggTradesData(asset, hourStart, now)
+	}
+
+	if err != nil {
+		return fmt.Errorf("failed to fetch new aggTrades: %w", err)
+	}
+
+	if len(newTrades) == 0 {
+		return nil // No new data
+	}
+
+	// Read existing trades and merge
+	var existingTrades []*AggTrade
+	if fs.FileExists(parquetPath) {
+		existingTrades, _ = s.readHourlyAggTradesParquet(parquetPath)
+	}
+
+	// Merge: keep existing trades that are not in new data
+	merged := make(map[int64]*AggTrade)
+	for _, t := range existingTrades {
+		merged[t.AggTradeID] = t
+	}
+	for _, t := range newTrades {
+		merged[t.AggTradeID] = t // New data overwrites existing
+	}
+
+	// Convert back to slice and sort
+	var allTrades []*AggTrade
+	for _, t := range merged {
+		allTrades = append(allTrades, t)
+	}
+
+	// Sort by AggTradeID
+	sortAggTradesByID(allTrades)
+
+	// Write merged data back
+	return s.writeHourlyAggTradesParquet(parquetPath, allTrades)
+}
+
+// fetchHourAggTradesData fetches aggTrades data for a specific time range
+func (s *HistoryConsumer) fetchHourAggTradesData(asset *HistoryAsset, start, end time.Time) ([]*AggTrade, error) {
+	startMs := start.UnixMilli()
+	endMs := end.UnixMilli()
+
+	return GetCurrentAggTrades(&AggTradeRequestV3{
+		Symbol:    asset.Market,
+		StartTime: &startMs,
+		EndTime:   &endMs,
+		Limit:     1000,
+	})
+}
+
+// fetchAggTradesFromID fetches aggTrades starting from a specific trade ID
+func (s *HistoryConsumer) fetchAggTradesFromID(asset *HistoryAsset, fromID int64) ([]*AggTrade, error) {
+	return GetCurrentAggTrades(&AggTradeRequestV3{
+		Symbol: asset.Market,
+		FromID: &fromID,
+		Limit:  1000,
+	})
+}
+
+// readHourlyAggTradesParquet reads aggTrades from an hourly parquet file
+func (s *HistoryConsumer) readHourlyAggTradesParquet(path string) ([]*AggTrade, error) {
+	recordCh, errCh := data.ReadParquet[ParquetAggTrade](path)
+
+	var trades []*AggTrade
+	for done := false; !done; {
+		select {
+		case record, ok := <-recordCh:
+			if !ok {
+				done = true
+				continue
+			}
+			// Convert ParquetAggTrade back to AggTrade
+			trades = append(trades, &AggTrade{
+				AggTradeID:   record.AggTradeID,
+				Price:        record.Price,
+				Quantity:     record.Quantity,
+				FirstTradeID: record.FirstTradeID,
+				LastTradeID:  record.LastTradeID,
+				Timestamp:    record.Timestamp / 1000, // Convert from microseconds to milliseconds
+				IsBuyerMaker: record.IsBuyerMaker,
+			})
+		case err, ok := <-errCh:
+			if !ok {
+				done = true
+				continue
+			}
+			return nil, err
+		}
+	}
+
+	return trades, nil
+}
+
+// writeHourlyAggTradesParquet writes aggTrades to an hourly parquet file atomically
+func (s *HistoryConsumer) writeHourlyAggTradesParquet(path string, trades []*AggTrade) error {
+	// Convert to absolute path
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return fmt.Errorf("failed to get absolute path for %s: %w", path, err)
+	}
+	path = absPath
+
+	// Ensure directory exists
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create directory %s: %w", dir, err)
+	}
+
+	// Write to a temp file first to avoid race conditions
+	tempPath := fmt.Sprintf("%s.%s.tmp", path, uuid.New().String()[:8])
+	writeCh, errCh := data.WriteParquet[ParquetAggTrade](tempPath)
+
+	// Write all trades
+	for _, trade := range trades {
+		parquet, err := trade.Parquet()
+		if err != nil {
+			close(writeCh)
+			os.Remove(tempPath)
+			return fmt.Errorf("failed to convert aggTrade to parquet: %w", err)
+		}
+		select {
+		case writeCh <- parquet:
+		case err := <-errCh:
+			os.Remove(tempPath)
+			return fmt.Errorf("failed to write parquet: %w", err)
+		}
+	}
+	close(writeCh)
+
+	// Wait for errors
+	for err := range errCh {
+		os.Remove(tempPath)
+		return fmt.Errorf("failed to write parquet: %w", err)
+	}
+
+	// Verify temp file exists before renaming
+	if _, err := os.Stat(tempPath); os.IsNotExist(err) {
+		return fmt.Errorf("temp parquet file was not created: %s", tempPath)
+	}
+
+	// Atomic rename
+	if err := os.Rename(tempPath, path); err != nil {
+		os.Remove(tempPath)
+		return fmt.Errorf("failed to rename temp file: %w", err)
+	}
+
+	return nil
+}
+
+// sortAggTradesByID sorts aggTrades by AggTradeID in ascending order
+func sortAggTradesByID(trades []*AggTrade) {
+	for i := 0; i < len(trades)-1; i++ {
+		for j := i + 1; j < len(trades); j++ {
+			if trades[i].AggTradeID > trades[j].AggTradeID {
+				trades[i], trades[j] = trades[j], trades[i]
+			}
+		}
+	}
 }
 
 // ReadCachedCurrentDay reads cached current day data from hourly parquet files

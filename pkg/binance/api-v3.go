@@ -11,15 +11,37 @@ import (
 	"github.com/google/go-querystring/query"
 )
 
+// AggTradeResponseV3 - response from Binance API /api/v3/aggTrades
 type AggTradeResponseV3 struct {
-	AggTradeId     int    `json:"a"` // Aggregate tradeId
+	AggTradeID     int64  `json:"a"` // Aggregate tradeId
 	Price          string `json:"p"` // Price
 	Quantity       string `json:"q"` // Quantity
-	FirstTradeId   int    `json:"f"` // First tradeId
-	LastTradeId    int    `json:"l"` // Last tradeId
+	FirstTradeID   int64  `json:"f"` // First tradeId
+	LastTradeID    int64  `json:"l"` // Last tradeId
 	Timestamp      int64  `json:"T"` // Timestamp, Example: 1498793709153
-	BuyerMaker     bool   `json:"m"` // Was the buyer the maker?
+	IsBuyerMaker   bool   `json:"m"` // Was the buyer the maker?
 	BestPriceMatch bool   `json:"M"` // Was the trade the best price match?
+}
+
+// AggTradeRequestV3 - request parameters for /api/v3/aggTrades
+// Ref: https://binance-docs.github.io/apidocs/spot/en/#compressed-aggregate-trades-list
+type AggTradeRequestV3 struct {
+	Symbol string `url:"symbol" validate:"required"`
+
+	FromID    *int64 `url:"fromId,omitempty"`    // Trade id to fetch from (inclusive)
+	StartTime *int64 `url:"startTime,omitempty"` // Millisecond timestamp
+	EndTime   *int64 `url:"endTime,omitempty"`   // Millisecond timestamp
+	Limit     int64  `url:"limit,omitempty"`     // Default: 500; Maximum: 1000
+}
+
+func (r *AggTradeRequestV3) Validate() error {
+	val := validator.New()
+	return val.Struct(r)
+}
+
+func (r *AggTradeRequestV3) GetURlParams() string {
+	v, _ := query.Values(r)
+	return v.Encode()
 }
 
 type CandleRequestV3 struct {
@@ -80,10 +102,53 @@ func GetCurrentCandles(cr *CandleRequestV3) ([]*Kline, error) {
 		return nil, fmt.Errorf("failed to parse JSON: %w", err)
 	}
 
-	// for _, k := range r {
-	// 	k.OpenTimeDate = data.AnyTimestampToTime(k.OpenTime)
-	// 	k.CloseTimeDate = data.AnyTimestampToTime(k.CloseTime)
-	// }
-
 	return r, nil
+}
+
+// GetCurrentAggTrades fetches aggregated trades from Binance API
+// Ref: https://binance-docs.github.io/apidocs/spot/en/#compressed-aggregate-trades-list
+func GetCurrentAggTrades(req *AggTradeRequestV3) ([]*AggTrade, error) {
+	if err := req.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid request: %w", err)
+	}
+
+	url := fmt.Sprintf("https://api.binance.com/api/v3/aggTrades?%s", req.GetURlParams())
+
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("failed to make request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("API error %d: %s", resp.StatusCode, string(body))
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	// Parse API response
+	var responses []AggTradeResponseV3
+	if err := json.Unmarshal(body, &responses); err != nil {
+		return nil, fmt.Errorf("failed to parse JSON: %w", err)
+	}
+
+	// Convert to internal AggTrade format
+	trades := make([]*AggTrade, len(responses))
+	for i, r := range responses {
+		trades[i] = &AggTrade{
+			AggTradeID:   r.AggTradeID,
+			Price:        strToFloat(r.Price),
+			Quantity:     strToFloat(r.Quantity),
+			FirstTradeID: r.FirstTradeID,
+			LastTradeID:  r.LastTradeID,
+			Timestamp:    r.Timestamp,
+			IsBuyerMaker: r.IsBuyerMaker,
+		}
+	}
+
+	return trades, nil
 }

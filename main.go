@@ -62,6 +62,8 @@ func main() {
 		"port", *port,
 		"endpoints", []string{
 			"GET  /v1/data?from={ms}&to={ms}&market={symbol}&exchange=binance&marketType=spot&frame=1m",
+			"GET  /v1/aggtrades?from={ms}&to={ms}&market={symbol}&exchange=binance&marketType=spot",
+			"GET  /v1/aggtrades/last24h?market={symbol}&exchange=binance&marketType=spot",
 			"GET  /v1/symbols",
 			"GET  /v1/markets",
 		},

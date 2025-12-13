@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"path/filepath"
 	"strconv"
 	"time"
@@ -17,7 +18,8 @@ import (
 )
 
 type DuckDBRepository struct {
-	db *sql.DB
+	db       *sql.DB
+	dataPath string
 }
 
 func NewDuckDBRepository() (*DuckDBRepository, error) {
@@ -25,7 +27,17 @@ func NewDuckDBRepository() (*DuckDBRepository, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to open duckdb: %w", err)
 	}
-	return &DuckDBRepository{db: db}, nil
+	dataPath, _ := filepath.Abs(fs.GetModuleRelativePath("data"))
+	return &DuckDBRepository{db: db, dataPath: dataPath}, nil
+}
+
+// NewDuckDBRepositoryWithPath creates a repository with a custom data path (for testing)
+func NewDuckDBRepositoryWithPath(dataPath string) (*DuckDBRepository, error) {
+	db, err := sql.Open("duckdb", "")
+	if err != nil {
+		return nil, fmt.Errorf("failed to open duckdb: %w", err)
+	}
+	return &DuckDBRepository{db: db, dataPath: dataPath}, nil
 }
 
 func (r *DuckDBRepository) Close() error {
@@ -54,8 +66,32 @@ func (r *DuckDBRepository) GetCandles(ctx context.Context, req domain.MarketData
 	return result, nil
 }
 
+func (r *DuckDBRepository) GetAggTrades(ctx context.Context, req domain.MarketDataRequest) ([]*domain.AggTrade, error) {
+	var result []*domain.AggTrade
+
+	// Query historical data
+	historical, err := r.aggTradesFromParquet(req)
+	if err != nil {
+		// If no historical files found, continue (don't fail)
+		// This allows today's queries to work even if historical query fails
+		slog.Warn("Failed to query historical aggTrades data", "error", err)
+	} else {
+		result = append(result, historical...)
+	}
+
+	// Query today's data if needed
+	if req.IsToday() {
+		today, err := r.aggTradesFromHourlyParquet(req)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, today...)
+	}
+
+	return result, nil
+}
+
 func (r *DuckDBRepository) candlesFromParquet(req domain.MarketDataRequest) ([]*domain.Candle, error) {
-	dataPath, _ := filepath.Abs(fs.GetModuleRelativePath("data"))
 
 	// Calculate interval
 	frame := binance.NewFrame(req.Frame.String())
@@ -96,7 +132,7 @@ func (r *DuckDBRepository) candlesFromParquet(req domain.MarketDataRequest) ([]*
 		To         int64
 		Interval   string
 	}{
-		DataPath:   dataPath,
+		DataPath:   r.dataPath,
 		MarketType: req.MarketType.String(),
 		Indicator:  req.Indicator.String(),
 		Market:     req.Market,
@@ -167,10 +203,9 @@ func (r *DuckDBRepository) candlesFromParquet(req domain.MarketDataRequest) ([]*
 }
 
 func (r *DuckDBRepository) candlesFromHourlyParquet(req domain.MarketDataRequest) ([]*domain.Candle, error) {
-	dataPath, _ := filepath.Abs(fs.GetModuleRelativePath("data"))
 	now := time.Now().UTC()
 	hourlyPath := fmt.Sprintf("%s/mtype=%s/indicator=%s/market=%s/frame=%s/year=%d/month=%d/day=%d/current/*.parquet",
-		dataPath, req.MarketType, req.Indicator, req.Market, req.Frame,
+		r.dataPath, req.MarketType, req.Indicator, req.Market, req.Frame,
 		now.Year(), int(now.Month()), now.Day())
 
 	if !fs.FileExists(filepath.Dir(hourlyPath)) {
@@ -272,6 +307,176 @@ func toFloat64(v any) float64 {
 		return f
 	default:
 		return 0
+	}
+}
+
+func (r *DuckDBRepository) aggTradesFromParquet(req domain.MarketDataRequest) ([]*domain.AggTrade, error) {
+
+	// Query historical data
+	resCh, errCh := data.QueryParquets(r.db, `
+		SELECT
+			agg_trade_id as aggTradeId,
+			price as price,
+			quantity as quantity,
+			first_trade_id as firstTradeId,
+			last_trade_id as lastTradeId,
+			ts / 1000000 as time,
+			is_buyer_maker as isBuyerMaker
+
+		FROM read_parquet('%<DataPath>s/*/*/*/*/*/*/*/data.parquet')
+
+		WHERE time BETWEEN %<From>d / 1000 AND %<To>d / 1000
+		ORDER BY
+			time DESC
+	`, struct {
+		DataPath   string
+		MarketType string
+		Indicator  string
+		Market     string
+		From       int64
+		To         int64
+	}{
+		DataPath:   r.dataPath,
+		MarketType: req.MarketType.String(),
+		Indicator:  req.Indicator.String(),
+		Market:     req.Market,
+		From:       req.From.UnixMilli(),
+		To:         req.To.UnixMilli(),
+	})
+
+	var result []*domain.AggTrade
+	for {
+		select {
+		case err, ok := <-errCh:
+			if ok {
+				return nil, err
+			}
+			return result, nil
+		case entry, ok := <-resCh:
+			if !ok {
+				return result, nil
+			}
+
+			instance := &domain.AggTrade{}
+			instance.ID = toInt64(entry["aggTradeId"])
+			instance.Price = toFloat64(entry["price"])
+			instance.Quantity = toFloat64(entry["quantity"])
+			instance.FirstTradeID = toInt64(entry["firstTradeId"])
+			instance.LastTradeID = toInt64(entry["lastTradeId"])
+			// For aggTrades, time comes as seconds since epoch
+			if timeVal, ok := entry["time"].(float64); ok {
+				instance.Time = time.Unix(int64(timeVal), 0)
+			} else {
+				instance.Time = toTime(entry["time"])
+			}
+			instance.IsBuyerMaker = toBool(entry["isBuyerMaker"])
+
+			result = append(result, instance)
+		}
+	}
+}
+
+func (r *DuckDBRepository) aggTradesFromHourlyParquet(req domain.MarketDataRequest) ([]*domain.AggTrade, error) {
+	now := time.Now().UTC()
+	// For aggTrades, don't include frame in the path since they don't have frames
+	hourlyPath := fmt.Sprintf("%s/mtype=%s/indicator=%s/market=%s/year=%d/month=%d/day=%d/current/*.parquet",
+		r.dataPath, req.MarketType, req.Indicator, req.Market,
+		now.Year(), int(now.Month()), now.Day())
+
+	if !fs.FileExists(filepath.Dir(hourlyPath)) {
+		return []*domain.AggTrade{}, nil
+	}
+
+	resCh, errCh := data.QueryParquets(r.db, `
+		SELECT
+			agg_trade_id as aggTradeId,
+			price as price,
+			quantity as quantity,
+			first_trade_id as firstTradeId,
+			last_trade_id as lastTradeId,
+			ts / 1000000 as time,
+			is_buyer_maker as isBuyerMaker
+		FROM read_parquet('%<HourlyPath>s', union_by_name=true)
+		WHERE time BETWEEN %<From>d / 1000 AND %<To>d / 1000
+		ORDER BY time DESC
+	`, struct {
+		HourlyPath string
+		From       int64
+		To         int64
+	}{
+		HourlyPath: hourlyPath,
+		From:       req.From.UnixMilli(),
+		To:         req.To.UnixMilli(),
+	})
+
+	var result []*domain.AggTrade
+	for {
+		select {
+		case err, ok := <-errCh:
+			if ok {
+				return nil, err
+			}
+			return result, nil
+		case entry, ok := <-resCh:
+			if !ok {
+				return result, nil
+			}
+
+			instance := &domain.AggTrade{}
+			instance.ID = toInt64(entry["aggTradeId"])
+			instance.Price = toFloat64(entry["price"])
+			instance.Quantity = toFloat64(entry["quantity"])
+			instance.FirstTradeID = toInt64(entry["firstTradeId"])
+			instance.LastTradeID = toInt64(entry["lastTradeId"])
+			// For aggTrades, time comes as seconds since epoch
+			if timeVal, ok := entry["time"].(float64); ok {
+				instance.Time = time.Unix(int64(timeVal), 0)
+			} else {
+				instance.Time = toTime(entry["time"])
+			}
+			instance.IsBuyerMaker = toBool(entry["isBuyerMaker"])
+
+			result = append(result, instance)
+		}
+	}
+}
+
+func toInt64(v any) int64 {
+	if v == nil {
+		return 0
+	}
+	switch val := v.(type) {
+	case int64:
+		return val
+	case int:
+		return int64(val)
+	case float64:
+		return int64(val)
+	case string:
+		if i, err := strconv.ParseInt(val, 10, 64); err == nil {
+			return i
+		}
+		return 0
+	default:
+		return 0
+	}
+}
+
+func toBool(v any) bool {
+	if v == nil {
+		return false
+	}
+	switch val := v.(type) {
+	case bool:
+		return val
+	case int64:
+		return val != 0
+	case int:
+		return val != 0
+	case string:
+		return val == "true" || val == "1"
+	default:
+		return false
 	}
 }
 

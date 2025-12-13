@@ -25,6 +25,7 @@ func NewMarketHandler(service domain.MarketService) *MarketHandler {
 
 func (h *MarketHandler) RegisterRoutes(r *mux.Router) {
 	r.HandleFunc("/v1/data", h.GetMarketHistory).Methods("GET")
+	r.HandleFunc("/v1/aggtrades", h.GetAggTrades).Methods("GET")
 	r.HandleFunc("/v1/symbols", h.GetSymbols).Methods("GET")
 	r.HandleFunc("/v1/markets", h.GetMarkets).Methods("GET")
 }
@@ -38,6 +39,22 @@ type AssetRequestDTO struct {
 	MarketType string `validate:"omitempty,oneof=spot futures options"`
 	Frame      string `validate:"omitempty,oneof=1s 1m 3m 5m 15m 30m 1h 2h 4h 6h 8h 12h 1d 3d 1w 1M"`
 	Indicator  string `validate:"omitempty,oneof=klines aggTrades"`
+}
+
+// AggTradesRequestDTO represents query parameters for /v1/aggtrades
+type AggTradesRequestDTO struct {
+	From       int64  `validate:"required"`              // Millisecond timestamp
+	To         int64  `validate:"required,gtfield=From"` // Millisecond timestamp
+	Market     string `validate:"required"`
+	Exchange   string `validate:"omitempty"`
+	MarketType string `validate:"omitempty,oneof=spot futures options"`
+}
+
+// AggTradesLast24hRequestDTO represents query parameters for /v1/aggtrades/last24h
+type AggTradesLast24hRequestDTO struct {
+	Market     string `validate:"required"`
+	Exchange   string `validate:"omitempty"`
+	MarketType string `validate:"omitempty,oneof=spot futures options"`
 }
 
 func (h *MarketHandler) GetMarketHistory(w http.ResponseWriter, r *http.Request) {
@@ -71,6 +88,37 @@ func (h *MarketHandler) GetMarketHistory(w http.ResponseWriter, r *http.Request)
 	}
 
 	h.writeJSON(w, candles)
+}
+
+func (h *MarketHandler) GetAggTrades(w http.ResponseWriter, r *http.Request) {
+	// Default values
+	dto := &AggTradesRequestDTO{
+		Exchange:   "binance",
+		MarketType: "spot",
+	}
+
+	if err := h.bindAndValidate(r, dto); err != nil {
+		h.writeError(w, err, http.StatusBadRequest)
+		return
+	}
+
+	req := domain.MarketDataRequest{
+		From:       *data.AnyTimestampToTime(dto.From),
+		To:         *data.AnyTimestampToTime(dto.To),
+		Market:     dto.Market,
+		Exchange:   dto.Exchange,
+		MarketType: domain.NewMarketType(dto.MarketType),
+		Frame:      domain.NoFrame, // AggTrades don't have frames
+		Indicator:  domain.AggTrades,
+	}
+
+	aggTrades, err := h.service.GetAggTrades(r.Context(), req)
+	if err != nil {
+		h.writeError(w, err, http.StatusInternalServerError)
+		return
+	}
+
+	h.writeJSON(w, aggTrades)
 }
 
 func (h *MarketHandler) GetMarkets(w http.ResponseWriter, r *http.Request) {
