@@ -140,13 +140,14 @@ func GetCurrentAggTrades(req *AggTradeRequestV3) ([]*AggTrade, error) {
 	trades := make([]*AggTrade, len(responses))
 	for i, r := range responses {
 		trades[i] = &AggTrade{
-			AggTradeID:   r.AggTradeID,
-			Price:        strToFloat(r.Price),
-			Quantity:     strToFloat(r.Quantity),
-			FirstTradeID: r.FirstTradeID,
-			LastTradeID:  r.LastTradeID,
-			Timestamp:    r.Timestamp,
-			IsBuyerMaker: r.IsBuyerMaker,
+			AggTradeID:       r.AggTradeID,
+			Price:            strToFloat(r.Price),
+			Quantity:         strToFloat(r.Quantity),
+			FirstTradeID:     r.FirstTradeID,
+			LastTradeID:      r.LastTradeID,
+			Timestamp:        r.Timestamp,
+			IsBuyerMaker:     r.IsBuyerMaker,
+			IsBestPriceMatch: r.BestPriceMatch,
 		}
 	}
 

@@ -521,7 +521,7 @@ func (s *HistoryConsumer) FetchAndCacheCurrentDayAggTrades(asset *HistoryAsset) 
 		// Check if we already have cached data for completed hours
 		if !isCurrentHour && fs.FileExists(parquetPath) {
 			// Read from cache for completed hours
-			trades, err := s.readHourlyAggTradesParquet(parquetPath)
+			trades, err := s.readHourlyAggTradesParquet(parquetPath, midnight)
 			if err == nil && len(trades) > 0 {
 				allTrades = append(allTrades, trades...)
 				continue
@@ -584,7 +584,7 @@ func (s *HistoryConsumer) RefreshLastHourAggTrades(asset *HistoryAsset) error {
 	hourStart := midnight.Add(time.Duration(currentHour) * time.Hour)
 
 	if fs.FileExists(parquetPath) {
-		trades, err := s.readHourlyAggTradesParquet(parquetPath)
+		trades, err := s.readHourlyAggTradesParquet(parquetPath, midnight)
 		if err == nil && len(trades) > 0 {
 			// Get the last trade to continue from
 			lastTradeID = trades[len(trades)-1].AggTradeID
@@ -614,7 +614,7 @@ func (s *HistoryConsumer) RefreshLastHourAggTrades(asset *HistoryAsset) error {
 	// Read existing trades and merge
 	var existingTrades []*AggTrade
 	if fs.FileExists(parquetPath) {
-		existingTrades, _ = s.readHourlyAggTradesParquet(parquetPath)
+		existingTrades, _ = s.readHourlyAggTradesParquet(parquetPath, midnight)
 	}
 
 	// Merge: keep existing trades that are not in new data
@@ -662,7 +662,7 @@ func (s *HistoryConsumer) fetchAggTradesFromID(asset *HistoryAsset, fromID int64
 }
 
 // readHourlyAggTradesParquet reads aggTrades from an hourly parquet file
-func (s *HistoryConsumer) readHourlyAggTradesParquet(path string) ([]*AggTrade, error) {
+func (s *HistoryConsumer) readHourlyAggTradesParquet(path string, date time.Time) ([]*AggTrade, error) {
 	recordCh, errCh := data.ReadParquet[ParquetAggTrade](path)
 
 	var trades []*AggTrade
@@ -674,15 +674,7 @@ func (s *HistoryConsumer) readHourlyAggTradesParquet(path string) ([]*AggTrade, 
 				continue
 			}
 			// Convert ParquetAggTrade back to AggTrade
-			trades = append(trades, &AggTrade{
-				AggTradeID:   record.AggTradeID,
-				Price:        record.Price,
-				Quantity:     record.Quantity,
-				FirstTradeID: record.FirstTradeID,
-				LastTradeID:  record.LastTradeID,
-				Timestamp:    record.Timestamp / 1000, // Convert from microseconds to milliseconds
-				IsBuyerMaker: record.IsBuyerMaker,
-			})
+			trades = append(trades, record.ToAggTrade(date))
 		case err, ok := <-errCh:
 			if !ok {
 				done = true

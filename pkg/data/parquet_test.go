@@ -454,7 +454,7 @@ func BenchmarkWriteParquet(b *testing.B) {
 
 		// Drain error channel
 		for range errCh {
-			// Ignore errors in benchmark
+			// IsBestPriceMatch errors in benchmark
 		}
 	}
 }

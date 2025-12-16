@@ -110,13 +110,14 @@ func TestAggTradeParquetConversion(t *testing.T) {
 	t.Run("Convert AggTrade to ParquetAggTrade", func(t *testing.T) {
 		now := time.Now().UTC()
 		trade := &AggTrade{
-			AggTradeID:   12345,
-			Price:        100000.50,
-			Quantity:     0.5,
-			FirstTradeID: 1000,
-			LastTradeID:  1005,
-			Timestamp:    now.UnixMilli(),
-			IsBuyerMaker: true,
+			AggTradeID:       12345,
+			Price:            100000.50,
+			Quantity:         0.5,
+			FirstTradeID:     1000,
+			LastTradeID:      1005,
+			Timestamp:        now.UnixMilli(),
+			IsBuyerMaker:     true,
+			IsBestPriceMatch: true,
 		}
 
 		parquet, err := trade.Parquet()
@@ -135,6 +136,25 @@ func TestAggTradeParquetConversion(t *testing.T) {
 		}
 		if parquet.IsBuyerMaker != trade.IsBuyerMaker {
 			t.Errorf("IsBuyerMaker mismatch: %v != %v", parquet.IsBuyerMaker, trade.IsBuyerMaker)
+		}
+		if parquet.IsBestPriceMatch != trade.IsBestPriceMatch {
+			t.Errorf("IsBestPriceMatch mismatch: %v != %v", parquet.IsBestPriceMatch, trade.IsBestPriceMatch)
+		}
+		if parquet.Time == 0 {
+			t.Errorf("Time should not be zero")
+		}
+
+		// Test round-trip conversion
+		midnight := now.Truncate(24 * time.Hour)
+		reconstructed := parquet.ToAggTrade(midnight)
+		if reconstructed.Timestamp != trade.Timestamp {
+			t.Errorf("Timestamp mismatch after round-trip: %d != %d", reconstructed.Timestamp, trade.Timestamp)
+		}
+		if reconstructed.AggTradeID != trade.AggTradeID {
+			t.Errorf("AggTradeID mismatch after round-trip: %d != %d", reconstructed.AggTradeID, trade.AggTradeID)
+		}
+		if reconstructed.IsBestPriceMatch != trade.IsBestPriceMatch {
+			t.Errorf("IsBestPriceMatch mismatch after round-trip: %v != %v", reconstructed.IsBestPriceMatch, trade.IsBestPriceMatch)
 		}
 	})
 }
@@ -165,4 +185,3 @@ func min(a, b int) int {
 	}
 	return b
 }
-

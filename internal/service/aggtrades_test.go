@@ -77,14 +77,14 @@ func TestGetAggTradesFromAPI(t *testing.T) {
 			trade.ID, trade.Price, trade.Quantity, trade.Time)
 	})
 
-	t.Run("Matches Grafana request format", func(t *testing.T) {
-		// Simulate the Grafana request: from=1765618071527&to=1765621671527
-		fromMs := int64(1765618071527)
-		toMs := int64(1765621671527)
+	t.Run("Matches Grafana request format (last hour)", func(t *testing.T) {
+		// Simulate the Grafana request with dynamic timestamps (last hour)
+		now := time.Now().UTC()
+		oneHourAgo := now.Add(-1 * time.Hour)
 
 		req := domain.MarketDataRequest{
-			From:       time.UnixMilli(fromMs),
-			To:         time.UnixMilli(toMs),
+			From:       oneHourAgo,
+			To:         now,
 			Market:     "BTCUSDT",
 			Exchange:   "binance",
 			MarketType: domain.Spot,
@@ -103,4 +103,3 @@ func TestGetAggTradesFromAPI(t *testing.T) {
 		t.Logf("Grafana request returned %d aggTrades", len(trades))
 	})
 }
-

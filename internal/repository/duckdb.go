@@ -394,11 +394,11 @@ func (r *DuckDBRepository) aggTradesFromHourlyParquet(req domain.MarketDataReque
 			quantity as quantity,
 			first_trade_id as firstTradeId,
 			last_trade_id as lastTradeId,
-			ts / 1000000 as time,
+			epoch_ms(ts) as time,
 			is_buyer_maker as isBuyerMaker
 		FROM read_parquet('%<HourlyPath>s', union_by_name=true)
-		WHERE time BETWEEN %<From>d / 1000 AND %<To>d / 1000
-		ORDER BY time DESC
+		WHERE ts BETWEEN epoch_ms(%<From>d) AND epoch_ms(%<To>d)
+		ORDER BY ts DESC
 	`, struct {
 		HourlyPath string
 		From       int64
@@ -423,22 +423,36 @@ func (r *DuckDBRepository) aggTradesFromHourlyParquet(req domain.MarketDataReque
 			}
 
 			instance := &domain.AggTrade{}
-			instance.ID = toInt64(entry["aggTradeId"])
-			instance.Price = toFloat64(entry["price"])
-			instance.Quantity = toFloat64(entry["quantity"])
-			instance.FirstTradeID = toInt64(entry["firstTradeId"])
-			instance.LastTradeID = toInt64(entry["lastTradeId"])
-			// For aggTrades, time comes as seconds since epoch
-			if timeVal, ok := entry["time"].(float64); ok {
-				instance.Time = time.Unix(int64(timeVal), 0)
+			// Try both camelCase and lowercase (DuckDB driver may lowercase)
+			instance.ID = toInt64(getMapValue(entry, "aggTradeId", "aggtradeid", "agg_trade_id"))
+			instance.Price = toFloat64(getMapValue(entry, "price"))
+			instance.Quantity = toFloat64(getMapValue(entry, "quantity"))
+			instance.FirstTradeID = toInt64(getMapValue(entry, "firstTradeId", "firsttradeid", "first_trade_id"))
+			instance.LastTradeID = toInt64(getMapValue(entry, "lastTradeId", "lasttradeid", "last_trade_id"))
+			// For hourly parquet, time comes as milliseconds since epoch (from epoch_ms)
+			timeVal := getMapValue(entry, "time")
+			if tv, ok := timeVal.(float64); ok {
+				instance.Time = time.UnixMilli(int64(tv))
+			} else if tv, ok := timeVal.(int64); ok {
+				instance.Time = time.UnixMilli(tv)
 			} else {
-				instance.Time = toTime(entry["time"])
+				instance.Time = toTime(timeVal)
 			}
-			instance.IsBuyerMaker = toBool(entry["isBuyerMaker"])
+			instance.IsBuyerMaker = toBool(getMapValue(entry, "isBuyerMaker", "isbuyermaker", "is_buyer_maker"))
 
 			result = append(result, instance)
 		}
 	}
+}
+
+// getMapValue tries multiple keys and returns the first non-nil value
+func getMapValue(m map[string]any, keys ...string) any {
+	for _, k := range keys {
+		if v, ok := m[k]; ok && v != nil {
+			return v
+		}
+	}
+	return nil
 }
 
 func toInt64(v any) int64 {
@@ -448,9 +462,19 @@ func toInt64(v any) int64 {
 	switch val := v.(type) {
 	case int64:
 		return val
+	case uint64:
+		return int64(val)
 	case int:
 		return int64(val)
+	case uint:
+		return int64(val)
+	case int32:
+		return int64(val)
+	case uint32:
+		return int64(val)
 	case float64:
+		return int64(val)
+	case float32:
 		return int64(val)
 	case string:
 		if i, err := strconv.ParseInt(val, 10, 64); err == nil {

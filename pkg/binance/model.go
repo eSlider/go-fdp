@@ -505,7 +505,7 @@ func (k *Kline) UnmarshalJSON(data []byte) error {
 // 4: l (Last tradeId)
 // 5: T (Timestamp in milliseconds)
 // 6: m (Is buyer the market maker)
-// 7: M (Ignore)
+// 7: M (IsBestPriceMatch)
 //
 // Example row:
 //
@@ -515,24 +515,28 @@ func (k *Kline) UnmarshalJSON(data []byte) error {
 // Example ZIP-File: https://data.binance.vision/data/spot/daily/aggTrades/BTCUSDT/BTCUSDT-aggTrades-2025-12-10.zip
 // and Spot API docs: https://binance-docs.github.io/apidocs/spot/en/#compressed-aggregate-trades-list
 type AggTrade struct {
-	AggTradeID   int64   `csv:"0"` // a (Aggregate tradeId)
-	Price        float64 `csv:"1"` // p (Price)
-	Quantity     float64 `csv:"2"` // q (Quantity)
-	FirstTradeID int64   `csv:"3"` // f (First tradeId)
-	LastTradeID  int64   `csv:"4"` // l (Last tradeId)
-	Timestamp    int64   `csv:"5"` // T (Timestamp in milliseconds)
-	IsBuyerMaker bool    `csv:"6"` // m (Is buyer the market maker)
-	Ignore       bool    `csv:"7"` // M (Ignore)
+	AggTradeID       int64   `csv:"0"` // a (Aggregate tradeId)
+	Price            float64 `csv:"1"` // p (Price)
+	Quantity         float64 `csv:"2"` // q (Quantity)
+	FirstTradeID     int64   `csv:"3"` // f (First tradeId)
+	LastTradeID      int64   `csv:"4"` // l (Last tradeId)
+	Timestamp        int64   `csv:"5"` // T (Timestamp in milliseconds)
+	IsBuyerMaker     bool    `csv:"6"` // m (Is buyer the market maker)
+	IsBestPriceMatch bool    `csv:"7"` // M (IsBestPriceMatch)
 }
 
 type ParquetAggTrade struct {
-	Timestamp    int64   `parquet:"name=ts,type=INT64, logicaltype=TIMESTAMP, logicaltype.isadjustedtoutc=false, logicaltype.unit=MICROS"`
-	AggTradeID   int64   `parquet:"name=agg_trade_id,type=INT64,convertedtype=UINT_64"`
-	FirstTradeID int64   `parquet:"name=first_trade_id,type=INT64,convertedtype=UINT_64"`
-	LastTradeID  int64   `parquet:"name=last_trade_id,type=INT64,convertedtype=UINT_64"`
-	Price        float64 `parquet:"name=price,type=DOUBLE"`
-	Quantity     float64 `parquet:"name=quantity,type=DOUBLE"`
-	IsBuyerMaker bool    `parquet:"name=is_buyer_maker,type=BOOLEAN"`
+	Time int32 `parquet:"name=open_time,type=INT32, convertedtype=TIME_MILLIS"` // Stroing time only, without date
+
+	AggTradeID   int64 `parquet:"name=agg_trade_id,type=INT64,convertedtype=UINT_64"`
+	FirstTradeID int64 `parquet:"name=first_trade_id,type=INT64,convertedtype=UINT_64"`
+	LastTradeID  int64 `parquet:"name=last_trade_id,type=INT64,convertedtype=UINT_64"`
+
+	Price    float64 `parquet:"name=price,type=DOUBLE"`
+	Quantity float64 `parquet:"name=quantity,type=DOUBLE"`
+
+	IsBuyerMaker     bool `parquet:"name=is_buyer_maker,type=BOOLEAN"`
+	IsBestPriceMatch bool `parquet:"name=is_best_price_match,type=BOOLEAN"`
 }
 
 func (a *AggTrade) Parquet() (*ParquetAggTrade, error) {
@@ -543,16 +547,44 @@ func (a *AggTrade) Parquet() (*ParquetAggTrade, error) {
 		return nil, errors.New("timestamp is zero")
 	}
 
-	// Check if the timestamp is milliseconds or microseconds
+	timestamp := data.AnyTimestampToTime(a.Timestamp)
+	if timestamp == nil {
+		return nil, errors.New("invalid timestamp")
+	}
+
+	// Get time, from midnight without date (only this day milliseconds) truncated.
+	timeMs := int32(
+		timestamp.UnixMilli() - timestamp.Truncate(24*time.Hour).UnixMilli(),
+	)
+
 	return &ParquetAggTrade{
-		Timestamp:    data.ToMicroseconds(a.Timestamp),
-		AggTradeID:   a.AggTradeID,
-		Price:        a.Price,
-		Quantity:     a.Quantity,
-		FirstTradeID: a.FirstTradeID,
-		LastTradeID:  a.LastTradeID,
-		IsBuyerMaker: a.IsBuyerMaker,
+		Time:             timeMs,
+		AggTradeID:       a.AggTradeID,
+		Price:            a.Price,
+		Quantity:         a.Quantity,
+		FirstTradeID:     a.FirstTradeID,
+		LastTradeID:      a.LastTradeID,
+		IsBuyerMaker:     a.IsBuyerMaker,
+		IsBestPriceMatch: a.IsBestPriceMatch,
 	}, nil
+}
+
+// ToAggTrade - convert parquet aggTrade back to AggTrade
+func (p *ParquetAggTrade) ToAggTrade(date time.Time) *AggTrade {
+	// Reconstruct timestamp
+	// date should be midnight of the day
+	timestamp := date.Add(time.Duration(p.Time) * time.Millisecond)
+
+	return &AggTrade{
+		AggTradeID:       p.AggTradeID,
+		Price:            p.Price,
+		Quantity:         p.Quantity,
+		FirstTradeID:     p.FirstTradeID,
+		LastTradeID:      p.LastTradeID,
+		Timestamp:        timestamp.UnixMilli(),
+		IsBuyerMaker:     p.IsBuyerMaker,
+		IsBestPriceMatch: p.IsBestPriceMatch,
+	}
 }
 
 type ParquetKline struct {
