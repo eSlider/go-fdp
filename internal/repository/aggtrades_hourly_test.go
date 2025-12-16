@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -43,7 +44,7 @@ func TestAggTradesFromHourlyParquet(t *testing.T) {
 	defer repo.Close()
 
 	t.Run("Reads aggTrades from hourly parquet files", func(t *testing.T) {
-		oneHourAgo := now.Add(-1 * time.Hour)
+		oneHourAgo := now.UTC().Add(-1 * time.Hour)
 
 		req := domain.MarketDataRequest{
 			From:       oneHourAgo,
@@ -81,13 +82,14 @@ func TestAggTradesFromHourlyParquet(t *testing.T) {
 		if trade.Time.IsZero() {
 			t.Error("Expected Time to be non-zero")
 		}
-
-		t.Logf("First trade: ID=%d, Price=%.2f, Qty=%.6f, Time=%v, IsBuyerMaker=%v",
+		fstr := fmt.Sprintf("First trade: ID=%d, Price=%.2f, Qty=%.6f, Time=%v, IsBuyerMaker=%v",
 			trade.ID, trade.Price, trade.Quantity, trade.Time, trade.IsBuyerMaker)
+
+		t.Log(fstr)
 	})
 
 	t.Run("GetAggTrades returns data for today", func(t *testing.T) {
-		oneHourAgo := now.Add(-1 * time.Hour)
+		oneHourAgo := now.UTC().Add(-1 * time.Hour)
 
 		req := domain.MarketDataRequest{
 			From:       oneHourAgo,
@@ -112,7 +114,7 @@ func TestAggTradesFromHourlyParquet(t *testing.T) {
 
 	t.Run("Validates time filtering works", func(t *testing.T) {
 		// Request for just the last 10 minutes
-		tenMinutesAgo := now.Add(-10 * time.Minute)
+		tenMinutesAgo := now.UTC().Add(-10 * time.Minute)
 
 		req := domain.MarketDataRequest{
 			From:       tenMinutesAgo,
@@ -126,6 +128,10 @@ func TestAggTradesFromHourlyParquet(t *testing.T) {
 		result, err := repo.aggTradesFromHourlyParquet(req)
 		if err != nil {
 			t.Fatalf("Failed to read aggTrades: %v", err)
+		}
+
+		if len(result) == 0 {
+			t.Fatal("Expected aggTrades, got none")
 		}
 
 		t.Logf("Last 10 minutes: %d trades", len(result))

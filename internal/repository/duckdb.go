@@ -382,7 +382,10 @@ func (r *DuckDBRepository) aggTradesFromParquet(req domain.MarketDataRequest) ([
 	}
 }
 
-func (r *DuckDBRepository) aggTradesFromHourlyParquet(req domain.MarketDataRequest) ([]*domain.AggTrade, error) {
+func (r *DuckDBRepository) aggTradesFromHourlyParquet(req domain.MarketDataRequest) (
+	result []*domain.AggTrade, err error,
+) {
+	result = make([]*domain.AggTrade, 0)
 	now := time.Now().UTC()
 	// For aggTrades, don't include frame in the path since they don't have frames
 	hourlyPath := fmt.Sprintf("%s/mtype=%s/indicator=%s/market=%s/year=%d/month=%d/day=%d/current/*.parquet",
@@ -425,7 +428,7 @@ func (r *DuckDBRepository) aggTradesFromHourlyParquet(req domain.MarketDataReque
 		Day:        now.Day(),
 	})
 
-	var result []*domain.AggTrade
+	// var result []*domain.AggTrade
 	for {
 		select {
 		case err, ok := <-errCh:
@@ -459,6 +462,7 @@ func (r *DuckDBRepository) aggTradesFromHourlyParquet(req domain.MarketDataReque
 			result = append(result, instance)
 		}
 	}
+	return
 }
 
 // getMapValue tries multiple keys and returns the first non-nil value
