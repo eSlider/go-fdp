@@ -320,12 +320,15 @@ func (r *DuckDBRepository) aggTradesFromParquet(req domain.MarketDataRequest) ([
 			quantity as quantity,
 			first_trade_id as firstTradeId,
 			last_trade_id as lastTradeId,
-			ts / 1000000 as time,
+			make_timestamp(year::BIGINT, month::BIGINT, day::BIGINT, 0, 0, 0.0) + (open_time::BIGINT * interval '1 millisecond') as time,
 			is_buyer_maker as isBuyerMaker
 
 		FROM read_parquet('%<DataPath>s/*/*/*/*/*/*/*/data.parquet')
 
-		WHERE time BETWEEN %<From>d / 1000 AND %<To>d / 1000
+		WHERE mtype = '%<MarketType>s'
+			AND indicator = '%<Indicator>s'
+			AND market = '%<Market>s'
+			AND time BETWEEN epoch_ms(%<From>d) AND epoch_ms(%<To>d)
 		ORDER BY
 			time DESC
 	`, struct {
@@ -358,18 +361,21 @@ func (r *DuckDBRepository) aggTradesFromParquet(req domain.MarketDataRequest) ([
 			}
 
 			instance := &domain.AggTrade{}
-			instance.ID = toInt64(entry["aggTradeId"])
-			instance.Price = toFloat64(entry["price"])
-			instance.Quantity = toFloat64(entry["quantity"])
-			instance.FirstTradeID = toInt64(entry["firstTradeId"])
-			instance.LastTradeID = toInt64(entry["lastTradeId"])
-			// For aggTrades, time comes as seconds since epoch
-			if timeVal, ok := entry["time"].(float64); ok {
-				instance.Time = time.Unix(int64(timeVal), 0)
+			instance.ID = toInt64(getMapValue(entry, "aggTradeId", "aggtradeid", "agg_trade_id"))
+			instance.Price = toFloat64(getMapValue(entry, "price"))
+			instance.Quantity = toFloat64(getMapValue(entry, "quantity"))
+			instance.FirstTradeID = toInt64(getMapValue(entry, "firstTradeId", "firsttradeid", "first_trade_id"))
+			instance.LastTradeID = toInt64(getMapValue(entry, "lastTradeId", "lasttradeid", "last_trade_id"))
+			// For aggTrades, time comes as timestamp from make_timestamp
+			timeVal := getMapValue(entry, "time")
+			if tv, ok := timeVal.(float64); ok {
+				instance.Time = time.UnixMilli(int64(tv))
+			} else if tv, ok := timeVal.(int64); ok {
+				instance.Time = time.UnixMilli(tv)
 			} else {
-				instance.Time = toTime(entry["time"])
+				instance.Time = toTime(timeVal)
 			}
-			instance.IsBuyerMaker = toBool(entry["isBuyerMaker"])
+			instance.IsBuyerMaker = toBool(getMapValue(entry, "isBuyerMaker", "isbuyermaker", "is_buyer_maker"))
 
 			result = append(result, instance)
 		}
@@ -394,19 +400,29 @@ func (r *DuckDBRepository) aggTradesFromHourlyParquet(req domain.MarketDataReque
 			quantity as quantity,
 			first_trade_id as firstTradeId,
 			last_trade_id as lastTradeId,
-			epoch_ms(ts) as time,
+			CASE
+				WHEN typeof(open_time) = 'TIME' THEN make_timestamp(%<Year>d, %<Month>d, %<Day>d, 0, 0, 0.0) + (date_part('epoch', open_time) * interval '1 second')
+				WHEN open_time::BIGINT < 86400000 THEN make_timestamp(%<Year>d, %<Month>d, %<Day>d, 0, 0, 0.0) + (open_time::BIGINT * interval '1 millisecond')
+				ELSE epoch_ms(open_time::BIGINT)
+			END as time,
 			is_buyer_maker as isBuyerMaker
 		FROM read_parquet('%<HourlyPath>s', union_by_name=true)
-		WHERE ts BETWEEN epoch_ms(%<From>d) AND epoch_ms(%<To>d)
-		ORDER BY ts DESC
+		WHERE time BETWEEN epoch_ms(%<From>d) AND epoch_ms(%<To>d)
+		ORDER BY time DESC
 	`, struct {
 		HourlyPath string
 		From       int64
 		To         int64
+		Year       int
+		Month      int
+		Day        int
 	}{
 		HourlyPath: hourlyPath,
 		From:       req.From.UnixMilli(),
 		To:         req.To.UnixMilli(),
+		Year:       now.Year(),
+		Month:      int(now.Month()),
+		Day:        now.Day(),
 	})
 
 	var result []*domain.AggTrade
