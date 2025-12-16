@@ -398,18 +398,28 @@ func (r *DuckDBRepository) aggTradesFromHourlyParquet(req domain.MarketDataReque
 
 	resCh, errCh := data.QueryParquets(r.db, `
 		SELECT
-			agg_trade_id as aggTradeId,
-			price as price,
-			quantity as quantity,
-			first_trade_id as firstTradeId,
-			last_trade_id as lastTradeId,
-			CASE
-				WHEN typeof(open_time) = 'TIME' THEN make_timestamp(%<Year>d, %<Month>d, %<Day>d, 0, 0, 0.0) + (date_part('epoch', open_time) * interval '1 second')
-				WHEN open_time::BIGINT < 86400000 THEN make_timestamp(%<Year>d, %<Month>d, %<Day>d, 0, 0, 0.0) + (open_time::BIGINT * interval '1 millisecond')
-				ELSE epoch_ms(open_time::BIGINT)
-			END as time,
-			is_buyer_maker as isBuyerMaker
-		FROM read_parquet('%<HourlyPath>s', union_by_name=true)
+			aggTradeId,
+			price,
+			quantity,
+			firstTradeId,
+			lastTradeId,
+			time,
+			isBuyerMaker
+		FROM (
+			SELECT
+				agg_trade_id as aggTradeId,
+				price as price,
+				quantity as quantity,
+				first_trade_id as firstTradeId,
+				last_trade_id as lastTradeId,
+				CASE
+					WHEN typeof(open_time) = 'TIME' THEN make_timestamp(%<Year>d, %<Month>d, %<Day>d, 0, 0, 0.0) + (date_part('epoch', open_time) * interval '1 second')
+					WHEN open_time::BIGINT < 86400000 THEN make_timestamp(%<Year>d, %<Month>d, %<Day>d, 0, 0, 0.0) + (open_time::BIGINT * interval '1 millisecond')
+					ELSE epoch_ms(open_time::BIGINT)
+				END as time,
+				is_buyer_maker as isBuyerMaker
+			FROM read_parquet('%<HourlyPath>s', union_by_name=true)
+		)
 		WHERE time BETWEEN epoch_ms(%<From>d) AND epoch_ms(%<To>d)
 		ORDER BY time DESC
 	`, struct {
