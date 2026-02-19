@@ -472,7 +472,6 @@ func (r *DuckDBRepository) aggTradesFromHourlyParquet(req domain.MarketDataReque
 			result = append(result, instance)
 		}
 	}
-	return
 }
 
 // getMapValue tries multiple keys and returns the first non-nil value

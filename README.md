@@ -85,3 +85,17 @@ go mod tidy      # Clean dependencies
 go fmt ./...     # Format code
 go test -tags no_duckdb_arrow ./...    # Run tests
 ```
+
+`
+## TODO:
+
+* Analyze OrderBook indicators project:
+  * https://github.dev/empenoso/MOEX-OrderBook-DeepZoom
+  * https://habr.com/ru/articles/975106/
+  * HQ data: https://www.youtube.com/watch?v=qFEPJJ7uUUo&t=3006s
+* ATAS | VDS Manager
+  * Analyze :
+    * Virtualization/KASM:
+    * https://git.markets-platform.com/TradePlatform/managment-task-report/issues/233
+    * https://docs.google.com/spreadsheets/d/12Z0IAXDVcBBeepIqwkT8xkjvdlf7IYcHCsBZUEo3YA8/edit?gid=0#gid=0
+* Agent-Builder

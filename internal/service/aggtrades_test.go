@@ -6,36 +6,28 @@ import (
 	"time"
 
 	"sync-v3/internal/domain"
+	"sync-v3/internal/repository"
 	"sync-v3/pkg/binance"
 )
 
-// MockRepository for testing
-type MockRepository struct{}
-
-func (m *MockRepository) GetCandles(ctx context.Context, req domain.MarketDataRequest) ([]*domain.Candle, error) {
-	return nil, nil
-}
-
-func (m *MockRepository) GetAggTrades(ctx context.Context, req domain.MarketDataRequest) ([]*domain.AggTrade, error) {
-	return nil, nil
-}
-
-// MockHistoryConsumer for testing
-type MockHistoryConsumer struct{}
-
-func (m *MockHistoryConsumer) DownloadAndTransform(asset *binance.HistoryAsset) (chan *binance.AssetETLInfo, chan error) {
-	infoCh := make(chan *binance.AssetETLInfo)
-	errCh := make(chan error)
-	go func() {
-		close(infoCh)
-		close(errCh)
-	}()
-	return infoCh, errCh
-}
-
 // TestGetAggTradesFromAPI tests fetching aggTrades directly from API for today's queries
 func TestGetAggTradesFromAPI(t *testing.T) {
-	service := NewMarketService(&MockRepository{}, &MockHistoryConsumer{})
+	// Create real repository
+	repo, err := repository.NewDuckDBRepository()
+	if err != nil {
+		t.Fatalf("Failed to create repository: %v", err)
+	}
+	defer repo.Close()
+
+	// Create real history consumer
+	ctx := context.Background()
+	consumer, err := binance.NewHistoryConsumer(ctx)
+	if err != nil {
+		t.Fatalf("Failed to create history consumer: %v", err)
+	}
+
+	// Create real service
+	service := NewMarketService(repo, consumer)
 
 	t.Run("Fetches today's aggTrades from API", func(t *testing.T) {
 		now := time.Now().UTC()

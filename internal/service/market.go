@@ -8,15 +8,16 @@ import (
 	"time"
 
 	"sync-v3/internal/domain"
+	"sync-v3/internal/repository"
 	"sync-v3/pkg/binance"
 )
 
 type MarketService struct {
-	repo            domain.MarketRepository
-	historyConsumer domain.HistoryConsumer
+	repo            *repository.DuckDBRepository
+	historyConsumer *binance.HistoryConsumer
 }
 
-func NewMarketService(repo domain.MarketRepository, consumer domain.HistoryConsumer) *MarketService {
+func NewMarketService(repo *repository.DuckDBRepository, consumer *binance.HistoryConsumer) *MarketService {
 	return &MarketService{
 		repo:            repo,
 		historyConsumer: consumer,

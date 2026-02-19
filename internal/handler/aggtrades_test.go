@@ -9,51 +9,32 @@ import (
 	"testing"
 	"time"
 
-	"sync-v3/internal/domain"
+	"sync-v3/internal/repository"
+	"sync-v3/internal/service"
+	"sync-v3/pkg/binance"
 )
-
-// MockMarketService for testing
-type MockMarketService struct{}
-
-func (m *MockMarketService) GetMarketHistory(ctx context.Context, req domain.MarketDataRequest) ([]*domain.Candle, error) {
-	return nil, nil
-}
-
-func (m *MockMarketService) GetAggTrades(ctx context.Context, req domain.MarketDataRequest) ([]*domain.AggTrade, error) {
-	now := time.Now().UTC()
-	return []*domain.AggTrade{
-		{
-			ID:           12345,
-			Price:        100000.50,
-			Quantity:     0.5,
-			FirstTradeID: 1000,
-			LastTradeID:  1005,
-			Time:         now,
-			IsBuyerMaker: true,
-		},
-		{
-			ID:           12346,
-			Price:        100001.25,
-			Quantity:     0.25,
-			FirstTradeID: 1006,
-			LastTradeID:  1008,
-			Time:         now.Add(1 * time.Second),
-			IsBuyerMaker: false,
-		},
-	}, nil
-}
-
-func (m *MockMarketService) GetMarkets(ctx context.Context) ([]string, error) {
-	return []string{"BTCUSDT"}, nil
-}
-
-func (m *MockMarketService) GetSymbols(ctx context.Context) ([]string, error) {
-	return []string{"BTC"}, nil
-}
 
 // TestAggTradesHandler tests the /v1/aggtrades endpoint
 func TestAggTradesHandler(t *testing.T) {
-	handler := NewMarketHandler(&MockMarketService{})
+	// Create real repository
+	repo, err := repository.NewDuckDBRepository()
+	if err != nil {
+		t.Fatalf("Failed to create repository: %v", err)
+	}
+	defer repo.Close()
+
+	// Create real history consumer
+	ctx := context.Background()
+	consumer, err := binance.NewHistoryConsumer(ctx)
+	if err != nil {
+		t.Fatalf("Failed to create history consumer: %v", err)
+	}
+
+	// Create real service
+	svc := service.NewMarketService(repo, consumer)
+
+	// Create handler with real service
+	handler := NewMarketHandler(svc)
 
 	t.Run("Returns correct JSON structure for Grafana", func(t *testing.T) {
 		now := time.Now().UTC()
@@ -129,4 +110,3 @@ func TestAggTradesHandler(t *testing.T) {
 func formatMs(t time.Time) string {
 	return fmt.Sprintf("%d", t.UnixMilli())
 }
-

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"sync-v3/internal/domain"
+	"sync-v3/internal/service"
 	"sync-v3/pkg/data"
 
 	"github.com/go-playground/validator/v10"
@@ -12,11 +13,11 @@ import (
 )
 
 type MarketHandler struct {
-	service  domain.MarketService
+	service  *service.MarketService
 	validate *validator.Validate
 }
 
-func NewMarketHandler(service domain.MarketService) *MarketHandler {
+func NewMarketHandler(service *service.MarketService) *MarketHandler {
 	return &MarketHandler{
 		service:  service,
 		validate: validator.New(),
