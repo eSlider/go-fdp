@@ -72,6 +72,10 @@ services:
     container_name: grafana
     ports:
       - "3000:3000"
+    dns:
+      # Avoid the host stub resolver (127.0.0.53) inside the container.
+      - 1.1.1.1
+      - 8.8.8.8
     environment:
       # Disable authentication
       - GF_AUTH_ANONYMOUS_ENABLED=true
