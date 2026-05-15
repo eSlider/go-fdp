@@ -1,8 +1,8 @@
 # IDE's
 /.idea
 
-# Data
-/data
+# Parquet/cache storage at repo root (not the pkg/data Go package)
+/data/
 
 # DB files
 *.duckdb

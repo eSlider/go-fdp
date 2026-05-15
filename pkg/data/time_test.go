@@ -3,6 +3,8 @@ package data
 import (
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestTypeOfTimestamp(t *testing.T) {
@@ -126,6 +128,17 @@ func TestAnyTimestampToTime(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestFrameStringRoundTrip(t *testing.T) {
+	for _, s := range []string{"1m", "1h", "1d", "5m", "15m"} {
+		t.Run(s, func(t *testing.T) {
+			f := StringToFrame(s)
+			assert.Equal(t, s, f.String())
+		})
+	}
+	assert.Equal(t, "", StringToFrame("invalid").String())
+	assert.Equal(t, "1m", NewFrame("").String())
 }
 
 func TestAnyTimestampToTimeIntegration(t *testing.T) {

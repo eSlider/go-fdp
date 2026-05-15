@@ -2,6 +2,8 @@ package domain
 
 import (
 	"time"
+
+	"sync-v3/pkg/data"
 )
 
 type MarketType string
@@ -41,64 +43,6 @@ func (i Indicator) String() string {
 	return string(i)
 }
 
-type Frame time.Duration
-
-const (
-	NoFrame     Frame = 0
-	Nanosecond  Frame = 1
-	Microsecond       = 1000 * Nanosecond
-	Millisecond       = 1000 * Microsecond
-	Second            = 1000 * Millisecond
-	Minute            = 60 * Second
-	ThreeMinute       = 3 * Minute
-	FiveMinute        = 5 * Minute
-	FifteenMin        = 15 * Minute
-	Hour              = 60 * Minute
-	TwoHour           = 2 * Hour
-	OneDay            = 24 * Hour
-	OneWeek           = 7 * OneDay
-)
-
-var Frames = map[string]Frame{
-	"":    NoFrame,
-	"1ns": Nanosecond,
-	"1us": Microsecond,
-	"1s":  Second,
-	"1m":  Minute,
-	"3m":  ThreeMinute,
-	"5m":  FiveMinute,
-	"15m": FifteenMin,
-	"1h":  Hour,
-	"2h":  TwoHour,
-	"4h":  4 * Hour,
-	"1d":  OneDay,
-	"1w":  OneWeek,
-}
-
-func StringToFrame(frame string) Frame {
-	f, ok := Frames[frame]
-	if !ok {
-		return NoFrame
-	}
-	return f
-}
-
-func (f Frame) String() string {
-	for k, v := range Frames {
-		if v == f {
-			return k
-		}
-	}
-	return ""
-}
-
-func NewFrame(frame string) Frame {
-	if frame == "" {
-		return Minute
-	}
-	return StringToFrame(frame)
-}
-
 type Candle struct {
 	OpenTime  time.Time `json:"openTime"`
 	CloseTime time.Time `json:"closeTime"`
@@ -134,7 +78,7 @@ type MarketDataRequest struct {
 	Market     string
 	Exchange   string
 	MarketType MarketType
-	Frame      Frame
+	Frame      data.Frame
 	Indicator  Indicator
 }
 

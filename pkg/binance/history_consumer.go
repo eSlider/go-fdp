@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync-v3/pkg/binance/v3"
 	"sync-v3/pkg/data"
 	"sync-v3/pkg/fs"
 	"time"
@@ -42,6 +43,7 @@ type HistoryConsumer struct {
 	cfg        *aws.Config         // AWS Config
 	client     *s3.Client          // S3 Client
 	downloader *manager.Downloader // S3 Downloader
+	api        *v3.Client          // Spot REST API v3
 	bucket     string              // Bucket
 	localDir   string              // Local directory for downloaded files
 
@@ -427,6 +429,7 @@ func NewHistoryConsumer(ctx context.Context) (*HistoryConsumer, error) {
 		bucket:          "data.binance.vision",
 		client:          client,
 		downloader:      downloader,
+		api:             v3.NewClient(),
 		cfg:             cfg,
 		ctx:             ctx,
 	}, nil
@@ -644,21 +647,29 @@ func (s *HistoryConsumer) fetchHourAggTradesData(asset *HistoryAsset, start, end
 	startMs := start.UnixMilli()
 	endMs := end.UnixMilli()
 
-	return GetCurrentAggTrades(&AggTradeRequestV3{
+	trades, err := s.api.AggTrades(&v3.AggTradeRequest{
 		Symbol:    asset.Market,
 		StartTime: &startMs,
 		EndTime:   &endMs,
 		Limit:     1000,
 	})
+	if err != nil {
+		return nil, err
+	}
+	return aggTradesFromV3(trades), nil
 }
 
 // fetchAggTradesFromID fetches aggTrades starting from a specific trade ID
 func (s *HistoryConsumer) fetchAggTradesFromID(asset *HistoryAsset, fromID int64) ([]*AggTrade, error) {
-	return GetCurrentAggTrades(&AggTradeRequestV3{
+	trades, err := s.api.AggTrades(&v3.AggTradeRequest{
 		Symbol: asset.Market,
 		FromID: &fromID,
 		Limit:  1000,
 	})
+	if err != nil {
+		return nil, err
+	}
+	return aggTradesFromV3(trades), nil
 }
 
 // readHourlyAggTradesParquet reads aggTrades from an hourly parquet file
@@ -860,13 +871,17 @@ func (s *HistoryConsumer) fetchHourData(asset *HistoryAsset, start, end time.Tim
 	startMs := start.UnixMilli()
 	endMs := end.UnixMilli()
 
-	return GetCurrentCandles(&CandleRequestV3{
+	klines, err := s.api.Candles(&v3.CandleRequest{
 		Symbol:    asset.Market,
 		Interval:  asset.Frame.String(),
 		StartTime: &startMs,
 		EndTime:   &endMs,
 		Limit:     1000,
 	})
+	if err != nil {
+		return nil, err
+	}
+	return klinesFromV3(klines), nil
 }
 
 // readHourlyParquet reads klines from an hourly parquet file

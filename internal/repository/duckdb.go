@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"sync-v3/internal/domain"
-	"sync-v3/pkg/binance"
 	"sync-v3/pkg/data"
 	"sync-v3/pkg/fs"
 
@@ -94,7 +93,7 @@ func (r *DuckDBRepository) GetAggTrades(ctx context.Context, req domain.MarketDa
 func (r *DuckDBRepository) candlesFromParquet(req domain.MarketDataRequest) ([]*domain.Candle, error) {
 
 	// Calculate interval
-	frame := binance.NewFrame(req.Frame.String())
+	frame := data.NewFrame(req.Frame.String())
 	intervalStr := fmt.Sprintf("%d ms", int64(time.Duration(frame)/time.Millisecond))
 
 	// Query historical data
@@ -212,7 +211,7 @@ func (r *DuckDBRepository) candlesFromHourlyParquet(req domain.MarketDataRequest
 		return []*domain.Candle{}, nil
 	}
 
-	frame := binance.NewFrame(req.Frame.String())
+	frame := data.NewFrame(req.Frame.String())
 	intervalStr := fmt.Sprintf("%d ms", int64(time.Duration(frame)/time.Millisecond))
 
 	resCh, errCh := data.QueryParquets(r.db, `

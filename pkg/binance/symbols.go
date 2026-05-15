@@ -1,8 +1,11 @@
 package binance
 
 import (
-	_ "embed"
+	"fmt"
+	"os"
 	"strings"
+
+	"sync-v3/pkg/fs"
 
 	"github.com/jszwec/csvutil"
 )
@@ -23,14 +26,6 @@ type Market struct {
 	Symbols []*Symbol
 }
 
-var (
-	//go:embed markets.txt
-	marketsTXT string // parsed from markets.txt (comma-separated list)
-
-	//go:embed cryptos.csv
-	cryptoCSV []byte
-)
-
 type ExchangeRegistry struct {
 	Symbols []*Symbol
 	Markets []*Market
@@ -47,13 +42,22 @@ func NewExchangeRegistry() (*ExchangeRegistry, error) {
 
 	var symbols []*Symbol
 
-	// Unmarshal symbols.jsonName = {string} "0G"
+	cryptoCSV, err := os.ReadFile(fs.GetModuleRelativePath("data/cryptos.csv"))
+	if err != nil {
+		return nil, fmt.Errorf("failed to read cryptos.csv: %w", err)
+	}
+
 	if err := csvutil.Unmarshal(cryptoCSV, &symbols); err != nil {
 		return nil, err
 	}
 
+	marketsTXT, err := os.ReadFile(fs.GetModuleRelativePath("data/markets.txt"))
+	if err != nil {
+		return nil, fmt.Errorf("failed to read markets.txt: %w", err)
+	}
+
 	var markets []*Market
-	for _, v := range strings.Split(marketsTXT, ",") {
+	for _, v := range strings.Split(string(marketsTXT), ",") {
 
 		// Create market
 		m := &Market{

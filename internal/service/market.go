@@ -10,6 +10,8 @@ import (
 	"sync-v3/internal/domain"
 	"sync-v3/internal/repository"
 	"sync-v3/pkg/binance"
+	"sync-v3/pkg/binance/v3"
+	"sync-v3/pkg/data"
 )
 
 type MarketService struct {
@@ -58,14 +60,12 @@ func (s *MarketService) fetchAggTradesFromAPI(ctx context.Context, req domain.Ma
 	startMs := req.From.UnixMilli()
 	endMs := req.To.UnixMilli()
 
-	apiReq := &binance.AggTradeRequestV3{
+	trades, err := v3.NewClient().AggTrades(&v3.AggTradeRequest{
 		Symbol:    req.Market,
 		StartTime: &startMs,
 		EndTime:   &endMs,
 		Limit:     1000,
-	}
-
-	trades, err := binance.GetCurrentAggTrades(apiReq)
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch aggTrades from API: %w", err)
 	}
@@ -107,9 +107,9 @@ func (s *MarketService) ensureDataAvailable(ctx context.Context, req domain.Mark
 
 		// Set frame only for klines, not for aggTrades
 		if req.Indicator == domain.Klines {
-			asset.Frame = binance.NewFrame(req.Frame.String())
+			asset.Frame = data.NewFrame(req.Frame.String())
 		} else {
-			asset.Frame = binance.NoFrame
+			asset.Frame = data.NoFrame
 		}
 
 		wg.Add(1)

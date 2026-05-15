@@ -78,7 +78,7 @@ func (h *MarketHandler) GetMarketHistory(w http.ResponseWriter, r *http.Request)
 		Market:     dto.Market,
 		Exchange:   dto.Exchange,
 		MarketType: domain.NewMarketType(dto.MarketType),
-		Frame:      domain.NewFrame(dto.Frame),
+		Frame:      data.NewFrame(dto.Frame),
 		Indicator:  domain.Indicator(dto.Indicator),
 	}
 
@@ -109,7 +109,7 @@ func (h *MarketHandler) GetAggTrades(w http.ResponseWriter, r *http.Request) {
 		Market:     dto.Market,
 		Exchange:   dto.Exchange,
 		MarketType: domain.NewMarketType(dto.MarketType),
-		Frame:      domain.NoFrame, // AggTrades don't have frames
+		Frame:      data.NoFrame, // AggTrades don't have frames
 		Indicator:  domain.AggTrades,
 	}
 

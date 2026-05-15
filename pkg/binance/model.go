@@ -70,76 +70,6 @@ const (
 	Daily             = "daily"
 )
 
-type Frame time.Duration
-
-const (
-	NoFrame     Frame = 0
-	Nanosecond  Frame = 1
-	Microsecond       = 1000 * Nanosecond
-	Millisecond       = 1000 * Microsecond
-	Second            = 1000 * Millisecond
-	Minute            = 60 * Second
-	ThreeMinute       = 3 * Minute
-	FiveMinute        = 5 * Minute
-	FifteenMin        = 15 * Minute
-	Hour              = 60 * Minute
-	TwoHour           = 2 * Hour
-	OneDay            = 24 * Hour
-	OneWeek           = 7 * OneDay
-)
-
-var Frames = map[string]Frame{
-	"":    NoFrame,
-	"1ns": Nanosecond,
-	"1us": Microsecond,
-	"1s":  Second,
-	"1m":  Minute,
-	"3m":  ThreeMinute,
-	"5m":  FiveMinute,
-	"15m": FifteenMin,
-	"1h":  Hour,
-	"2h":  TwoHour,
-	"4h":  4 * Hour,
-	"1d":  OneDay,
-	"1w":  OneWeek,
-}
-
-// StringToFrame - converts a string to a frame
-func StringToFrame(frame string) Frame {
-	f, ok := Frames[frame]
-	if !ok {
-		return NoFrame
-	}
-	return f
-}
-
-func FrameToString(frame Frame) string {
-	for k, v := range Frames {
-		if v == frame {
-			return k
-		}
-	}
-	return ""
-}
-
-// String - returns a frame
-func (f Frame) String() string {
-	for k, v := range Frames {
-		if v == f {
-			return k
-		}
-	}
-	return ""
-}
-
-// NewFrame - returns a frame
-func NewFrame(frame string) Frame {
-	if frame == "" {
-		return Minute
-	}
-	return StringToFrame(frame)
-}
-
 type FutureType string
 
 func (f FutureType) String() string {
@@ -217,7 +147,7 @@ func (i Indicator) String() string {
 type HistoryAsset struct {
 	MarketType
 	Frequency
-	Frame
+	data.Frame
 	Indicator
 	Market string
 	Date   time.Time
@@ -236,7 +166,7 @@ func (q *HistoryAsset) SymbolLink() string {
 		q.Frequency = Monthly
 	}
 	if q.Frame.String() == "" {
-		q.Frame = Minute
+		q.Frame = data.Minute
 	}
 	if q.Indicator == "" {
 		q.Indicator = Klines
@@ -316,7 +246,7 @@ func NewHistoryAssetByPath(path string) (a *HistoryAsset, err error) {
 
 	switch a.Indicator {
 	case Klines:
-		a.Frame = StringToFrame(chunks[5])
+		a.Frame = data.StringToFrame(chunks[5])
 	}
 
 	return
@@ -344,7 +274,7 @@ func (q *HistoryAsset) IsHistoryLinkAvailable() (err error) {
 
 	// Frame is required only for klines
 	if q.Indicator == Klines {
-		if q.Frame == NoFrame {
+		if q.Frame == data.NoFrame {
 			return fmt.Errorf("frame is required for klines")
 		}
 	}

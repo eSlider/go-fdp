@@ -39,7 +39,7 @@ func TestMainProgramParquetCreation(t *testing.T) {
 		asset := &binance.HistoryAsset{
 			MarketType: binance.Spot,
 			Frequency:  binance.Daily,
-			Frame:      binance.Minute,
+			Frame:      data.Minute,
 			Indicator:  binance.Klines,
 			Date:       time.Date(2020, 8, 2, 0, 0, 0, 0, time.UTC),
 			Market:     "ZECUSDT",
@@ -125,7 +125,8 @@ func TestMainProgramParquetCreation(t *testing.T) {
 			if i >= 5 { // Check first 5 records
 				break
 			}
-			if record.OpenTime == 0 {
+			// OpenTime is milliseconds since midnight; 0 is valid for the first candle.
+			if record.OpenTime < 0 {
 				t.Errorf("record %d has invalid open_time: %d", i, record.OpenTime)
 			}
 			if record.Open <= 0 {
@@ -154,7 +155,7 @@ func TestMainProgramParquetCreation(t *testing.T) {
 			MarketType: binance.Spot,
 			Frequency:  binance.Daily,
 			Indicator:  binance.AggTrades,
-			Frame:      binance.NoFrame, // aggTrades don't use frames
+			Frame:      data.NoFrame, // aggTrades don't use frames
 			// Date:       time.Now(),
 			Date:   time.Date(2019, 8, 1, 0, 0, 0, 0, time.UTC),
 			Market: "ETHUSDT",

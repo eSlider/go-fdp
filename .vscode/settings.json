@@ -1,0 +1,11 @@
+{
+  // Override user "files.exclude": { "**/data": true } — keep pkg/data visible
+  "files.exclude": {
+    "**/data": false,
+    "data": true
+  },
+  "search.exclude": {
+    "**/data": false,
+    "data": true
+  }
+}

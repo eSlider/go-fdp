@@ -1,7 +1,6 @@
 package data
 
 import (
-	"bufio"
 	"database/sql"
 	"strings"
 	"testing"
@@ -28,9 +27,10 @@ Charlie,35,Chicago`)
 		City string
 	}
 
-	csvBytes, _ := bufio.NewReader(csvData).ReadBytes('\n')
 	csvBuf := &Buffer{
-		data: csvBytes,
+		data: []byte(`Alice,30,New York
+Bob,25,Los Angeles
+Charlie,35,Chicago`),
 	}
 
 	// Read CSV and write to parquet
