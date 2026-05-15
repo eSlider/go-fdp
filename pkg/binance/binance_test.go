@@ -128,9 +128,9 @@ func TestAPI_GetCurrentCandles(t *testing.T) {
 		t.Run(market, func(t *testing.T) {
 			raw, err := v3.NewClient().Candles(&v3.CandleRequest{
 				Symbol:    market,
+				StartTime: new(start),
+				EndTime:   new(end),
 				Interval:  "1m",
-				StartTime: &start,
-				EndTime:   &end,
 			})
 			require.NoError(t, err)
 			candles := klinesFromV3(raw)
@@ -148,8 +148,8 @@ func TestAPI_GetCurrentAggTrades(t *testing.T) {
 
 	raw, err := v3.NewClient().AggTrades(&v3.AggTradeRequest{
 		Symbol:    "BTCUSDT",
-		StartTime: int64Ptr(start.UnixMilli()),
-		EndTime:   int64Ptr(now.UnixMilli()),
+		StartTime: new(start.UnixMilli()),
+		EndTime:   new(now.UnixMilli()),
 		Limit:     100,
 	})
 	require.NoError(t, err)

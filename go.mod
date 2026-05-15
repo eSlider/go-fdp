@@ -11,9 +11,9 @@ require (
 	github.com/duckdb/duckdb-go/v2 v2.10502.0
 	github.com/go-playground/validator/v10 v10.30.2
 	github.com/go-viper/mapstructure/v2 v2.5.0
-	github.com/google/go-querystring v1.2.0
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/mux v1.8.1
+	github.com/gorilla/schema v1.4.1
 	github.com/jszwec/csvutil v1.10.0
 	github.com/stretchr/testify v1.11.1
 	github.com/xitongsys/parquet-go v1.6.2

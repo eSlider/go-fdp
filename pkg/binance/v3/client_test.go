@@ -30,6 +30,8 @@ func TestRequestURLParams(t *testing.T) {
 		StartTime: &start,
 		Limit:     100,
 	}
-	assert.Contains(t, req.urlParams(), "symbol=ETHUSDT")
-	assert.Contains(t, req.urlParams(), "startTime=1000")
+	params, err := req.urlParams()
+	require.NoError(t, err)
+	assert.Contains(t, params, "symbol=ETHUSDT")
+	assert.Contains(t, params, "startTime=1000")
 }

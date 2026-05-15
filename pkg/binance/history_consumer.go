@@ -644,13 +644,10 @@ func (s *HistoryConsumer) RefreshLastHourAggTrades(asset *HistoryAsset) error {
 
 // fetchHourAggTradesData fetches aggTrades data for a specific time range
 func (s *HistoryConsumer) fetchHourAggTradesData(asset *HistoryAsset, start, end time.Time) ([]*AggTrade, error) {
-	startMs := start.UnixMilli()
-	endMs := end.UnixMilli()
-
 	trades, err := s.api.AggTrades(&v3.AggTradeRequest{
 		Symbol:    asset.Market,
-		StartTime: &startMs,
-		EndTime:   &endMs,
+		StartTime: new(start.UnixMilli()),
+		EndTime:   new(end.UnixMilli()),
 		Limit:     1000,
 	})
 	if err != nil {
@@ -868,14 +865,11 @@ func (s *HistoryConsumer) RefreshLastHour(asset *HistoryAsset) error {
 // fetchHourData fetches kline data for a specific time range
 func (s *HistoryConsumer) fetchHourData(asset *HistoryAsset, start, end time.Time) ([]*Kline, error) {
 	// Convert to milliseconds for API
-	startMs := start.UnixMilli()
-	endMs := end.UnixMilli()
-
 	klines, err := s.api.Candles(&v3.CandleRequest{
 		Symbol:    asset.Market,
+		StartTime: new(start.UnixMilli()),
+		EndTime:   new(end.UnixMilli()),
 		Interval:  asset.Frame.String(),
-		StartTime: &startMs,
-		EndTime:   &endMs,
 		Limit:     1000,
 	})
 	if err != nil {

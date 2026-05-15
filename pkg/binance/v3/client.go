@@ -40,20 +40,20 @@ func (c *Client) AggTrades(req *AggTradeRequest) ([]AggTrade, error) {
 		return nil, fmt.Errorf("invalid request: %w", err)
 	}
 
-	url := fmt.Sprintf("%s/api/v3/aggTrades?%s", c.baseURL, req.urlParams())
+	params, err := req.urlParams()
+	if err != nil {
+		return nil, fmt.Errorf("invalid request: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/api/v3/aggTrades?%s", c.baseURL, params)
 	body, err := c.get(url)
 	if err != nil {
 		return nil, err
 	}
 
-	var responses []aggTradeResponse
-	if err := json.Unmarshal(body, &responses); err != nil {
+	var trades []AggTrade
+	if err := json.Unmarshal(body, &trades); err != nil {
 		return nil, fmt.Errorf("failed to parse JSON: %w", err)
-	}
-
-	trades := make([]AggTrade, len(responses))
-	for i, r := range responses {
-		trades[i] = aggTradeFromResponse(r)
 	}
 	return trades, nil
 }
@@ -64,7 +64,12 @@ func (c *Client) Candles(req *CandleRequest) ([]Kline, error) {
 		return nil, fmt.Errorf("invalid request: %w", err)
 	}
 
-	url := fmt.Sprintf("%s/api/v3/klines?%s", c.baseURL, req.urlParams())
+	params, err := req.urlParams()
+	if err != nil {
+		return nil, fmt.Errorf("invalid request: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/api/v3/klines?%s", c.baseURL, params)
 	body, err := c.get(url)
 	if err != nil {
 		return nil, err
