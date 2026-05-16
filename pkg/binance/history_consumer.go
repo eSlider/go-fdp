@@ -645,10 +645,12 @@ func (s *HistoryConsumer) RefreshLastHourAggTrades(asset *HistoryAsset) error {
 // fetchHourAggTradesData fetches aggTrades data for a specific time range
 func (s *HistoryConsumer) fetchHourAggTradesData(asset *HistoryAsset, start, end time.Time) ([]*AggTrade, error) {
 	trades, err := s.api.AggTrades(&v3.AggTradeRequest{
-		Symbol:    asset.Market,
-		StartTime: new(start.UnixMilli()),
-		EndTime:   new(end.UnixMilli()),
-		Limit:     1000,
+		Base: v3.SymbolRequest{
+			Symbol:    asset.Market,
+			StartTime: new(start.UnixMilli()),
+			EndTime:   new(end.UnixMilli()),
+		},
+		Limit: 1000,
 	})
 	if err != nil {
 		return nil, err
@@ -659,7 +661,9 @@ func (s *HistoryConsumer) fetchHourAggTradesData(asset *HistoryAsset, start, end
 // fetchAggTradesFromID fetches aggTrades starting from a specific trade ID
 func (s *HistoryConsumer) fetchAggTradesFromID(asset *HistoryAsset, fromID int64) ([]*AggTrade, error) {
 	trades, err := s.api.AggTrades(&v3.AggTradeRequest{
-		Symbol: asset.Market,
+		Base: v3.SymbolRequest{
+			Symbol: asset.Market,
+		},
 		FromID: &fromID,
 		Limit:  1000,
 	})
@@ -866,11 +870,13 @@ func (s *HistoryConsumer) RefreshLastHour(asset *HistoryAsset) error {
 func (s *HistoryConsumer) fetchHourData(asset *HistoryAsset, start, end time.Time) ([]*Kline, error) {
 	// Convert to milliseconds for API
 	klines, err := s.api.Candles(&v3.CandleRequest{
-		Symbol:    asset.Market,
-		StartTime: new(start.UnixMilli()),
-		EndTime:   new(end.UnixMilli()),
-		Interval:  asset.Frame.String(),
-		Limit:     1000,
+		Base: v3.SymbolRequest{
+			Symbol:    asset.Market,
+			StartTime: new(start.UnixMilli()),
+			EndTime:   new(end.UnixMilli()),
+		},
+		Interval: asset.Frame.String(),
+		Limit:    1000,
 	})
 	if err != nil {
 		return nil, err

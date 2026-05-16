@@ -1,25 +1,29 @@
 package v3
 
 import (
-	"net/url"
+	"net/http"
 
+	"github.com/ggicci/httpin"
 	"github.com/go-playground/validator/v10"
-	"github.com/gorilla/schema"
 )
 
-var (
-	queryEncoder = schema.NewEncoder()
-	validate     = validator.New()
-)
+const encodeBaseURL = "http://localhost/"
+
+var validate = validator.New()
+
+// SymbolRequest is the common symbol and time-range query parameters.
+type SymbolRequest struct {
+	Symbol    string `in:"query=symbol;required" validate:"required"`
+	StartTime *int64 `in:"query=startTime;omitempty"`
+	EndTime   *int64 `in:"query=endTime;omitempty"`
+}
 
 // AggTradeRequest is the query for GET /api/v3/aggTrades.
 // Ref: https://binance-docs.github.io/apidocs/spot/en/#compressed-aggregate-trades-list
 type AggTradeRequest struct {
-	Symbol    string `schema:"symbol" validate:"required"`
-	StartTime *int64 `schema:"startTime,omitempty"`
-	EndTime   *int64 `schema:"endTime,omitempty"`
-	FromID    *int64 `schema:"fromId,omitempty"`
-	Limit     int64  `schema:"limit,omitempty"`
+	Base   SymbolRequest
+	FromID *int64 `in:"query=fromId;omitempty"`
+	Limit  int64  `in:"query=limit;omitempty"`
 }
 
 func (r *AggTradeRequest) Validate() error {
@@ -32,12 +36,10 @@ func (r *AggTradeRequest) urlParams() (string, error) {
 
 // CandleRequest is the query for GET /api/v3/klines.
 type CandleRequest struct {
-	Symbol    string  `schema:"symbol" validate:"required"`
-	Interval  string  `schema:"interval" validate:"required"`
-	StartTime *int64  `schema:"startTime,omitempty"`
-	EndTime   *int64  `schema:"endTime,omitempty"`
-	TimeZone  *string `schema:"timeZone,omitempty"`
-	Limit     int64   `schema:"limit,omitempty"`
+	Base     SymbolRequest
+	Interval string  `in:"query=interval;required" validate:"required"`
+	TimeZone *string `in:"query=timeZone;omitempty"`
+	Limit    int64   `in:"query=limit;omitempty"`
 }
 
 func (r *CandleRequest) Validate() error {
@@ -48,10 +50,10 @@ func (r *CandleRequest) urlParams() (string, error) {
 	return encodeQuery(r)
 }
 
-func encodeQuery(v any) (string, error) {
-	form := url.Values{}
-	if err := queryEncoder.Encode(v, form); err != nil {
+func encodeQuery(req any) (string, error) {
+	httpReq, err := httpin.NewRequest(http.MethodGet, encodeBaseURL, req)
+	if err != nil {
 		return "", err
 	}
-	return form.Encode(), nil
+	return httpReq.URL.RawQuery, nil
 }

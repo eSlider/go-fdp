@@ -11,24 +11,29 @@ func TestAggTradeRequestValidate(t *testing.T) {
 	err := (&AggTradeRequest{}).Validate()
 	require.Error(t, err)
 
-	err = (&AggTradeRequest{Symbol: "BTCUSDT"}).Validate()
+	err = (&AggTradeRequest{Base: SymbolRequest{Symbol: "BTCUSDT"}}).Validate()
 	require.NoError(t, err)
 }
 
 func TestCandleRequestValidate(t *testing.T) {
-	err := (&CandleRequest{Symbol: "BTCUSDT"}).Validate()
+	err := (&CandleRequest{Base: SymbolRequest{Symbol: "BTCUSDT"}}).Validate()
 	require.Error(t, err)
 
-	err = (&CandleRequest{Symbol: "BTCUSDT", Interval: "1m"}).Validate()
+	err = (&CandleRequest{
+		Base:     SymbolRequest{Symbol: "BTCUSDT"},
+		Interval: "1m",
+	}).Validate()
 	require.NoError(t, err)
 }
 
 func TestRequestURLParams(t *testing.T) {
 	start := int64(1000)
 	req := &AggTradeRequest{
-		Symbol:    "ETHUSDT",
-		StartTime: &start,
-		Limit:     100,
+		Base: SymbolRequest{
+			Symbol:    "ETHUSDT",
+			StartTime: &start,
+		},
+		Limit: 100,
 	}
 	params, err := req.urlParams()
 	require.NoError(t, err)

@@ -61,10 +61,12 @@ func (s *MarketService) fetchAggTradesFromAPI(ctx context.Context, req domain.Ma
 	endMs := req.To.UnixMilli()
 
 	trades, err := v3.NewClient().AggTrades(&v3.AggTradeRequest{
-		Symbol:    req.Market,
-		StartTime: &startMs,
-		EndTime:   &endMs,
-		Limit:     1000,
+		Base: v3.SymbolRequest{
+			Symbol:    req.Market,
+			StartTime: &startMs,
+			EndTime:   &endMs,
+		},
+		Limit: 1000,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch aggTrades from API: %w", err)

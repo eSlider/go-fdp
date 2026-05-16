@@ -15,8 +15,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// --- unit tests (no network) ---
-
 func TestHistoryAssetPathRoundTrip(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -127,10 +125,12 @@ func TestAPI_GetCurrentCandles(t *testing.T) {
 	for _, market := range []string{"BTCUSDT", "ETHUSDT"} {
 		t.Run(market, func(t *testing.T) {
 			raw, err := v3.NewClient().Candles(&v3.CandleRequest{
-				Symbol:    market,
-				StartTime: new(start),
-				EndTime:   new(end),
-				Interval:  "1m",
+				Base: v3.SymbolRequest{
+					Symbol:    market,
+					StartTime: new(start),
+					EndTime:   new(end),
+				},
+				Interval: "1m",
 			})
 			require.NoError(t, err)
 			candles := klinesFromV3(raw)
@@ -147,10 +147,12 @@ func TestAPI_GetCurrentAggTrades(t *testing.T) {
 	start := now.Add(-10 * time.Minute)
 
 	raw, err := v3.NewClient().AggTrades(&v3.AggTradeRequest{
-		Symbol:    "BTCUSDT",
-		StartTime: new(start.UnixMilli()),
-		EndTime:   new(now.UnixMilli()),
-		Limit:     100,
+		Base: v3.SymbolRequest{
+			Symbol:    "BTCUSDT",
+			StartTime: new(start.UnixMilli()),
+			EndTime:   new(now.UnixMilli()),
+		},
+		Limit: 100,
 	})
 	require.NoError(t, err)
 	trades := aggTradesFromV3(raw)
