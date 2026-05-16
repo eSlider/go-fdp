@@ -41,14 +41,11 @@ func TypeOfTimestamp(ts int64) TimestampType {
 func AnyTimestampToTime(ts int64) *time.Time {
 	switch TypeOfTimestamp(ts) {
 	case TimestampInMicros:
-		micro := time.UnixMicro(ts)
-		return &micro
+		return new(time.UnixMicro(ts))
 	case TimestampInSeconds:
-		unix := time.Unix(ts, 0)
-		return &unix
+		return new(time.Unix(ts, 0))
 	case TimestampInMillis:
-		milli := time.UnixMilli(ts)
-		return &milli
+		return new(time.UnixMilli(ts))
 	}
 	return nil
 }

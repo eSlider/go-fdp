@@ -55,7 +55,7 @@ func TestKlineParquetRoundTrip(t *testing.T) {
 	date := time.Date(2023, 10, 26, 0, 0, 0, 0, time.UTC)
 	openTime := date.Add(12*time.Hour + 30*time.Minute)
 
-	kline := &Kline{
+	kline := &v3.Kline{
 		OpenTime:   openTime.UnixMilli(),
 		CloseTime:  openTime.Add(time.Minute).UnixMilli(),
 		OpenPrice:  100,
@@ -76,7 +76,7 @@ func TestKlineParquetRoundTrip(t *testing.T) {
 
 func TestAggTradeParquetRoundTrip(t *testing.T) {
 	now := time.Date(2025, 12, 13, 12, 0, 0, 0, time.UTC)
-	trade := &AggTrade{
+	trade := &v3.AggTrade{
 		AggTradeID:       12345,
 		Price:            100000.50,
 		Quantity:         0.5,
@@ -97,7 +97,7 @@ func TestAggTradeParquetRoundTrip(t *testing.T) {
 }
 
 func TestSortAggTradesByID(t *testing.T) {
-	trades := []*AggTrade{
+	trades := []v3.AggTrade{
 		{AggTradeID: 5}, {AggTradeID: 2}, {AggTradeID: 8}, {AggTradeID: 1},
 	}
 	sortAggTradesByID(trades)
@@ -121,10 +121,11 @@ func TestAPI_GetCurrentCandles(t *testing.T) {
 	now := time.Now()
 	start := now.Add(-time.Minute).UnixMicro()
 	end := now.UnixMicro()
+	client := v3.NewClient()
 
 	for _, market := range []string{"BTCUSDT", "ETHUSDT"} {
 		t.Run(market, func(t *testing.T) {
-			raw, err := v3.NewClient().Candles(&v3.CandleRequest{
+			candles, err := client.Candles(&v3.CandleRequest{
 				Base: v3.SymbolRequest{
 					Symbol:    market,
 					StartTime: new(start),
@@ -133,7 +134,6 @@ func TestAPI_GetCurrentCandles(t *testing.T) {
 				Interval: "1m",
 			})
 			require.NoError(t, err)
-			candles := klinesFromV3(raw)
 			require.NoError(t, err)
 			require.Len(t, candles, 1)
 		})
@@ -155,7 +155,7 @@ func TestAPI_GetCurrentAggTrades(t *testing.T) {
 		Limit: 100,
 	})
 	require.NoError(t, err)
-	trades := aggTradesFromV3(raw)
+	trades := raw
 	require.NotEmpty(t, trades)
 
 	first := trades[0]

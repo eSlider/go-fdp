@@ -1,7 +1,6 @@
 package v3
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,23 +14,27 @@ type Client struct {
 	httpClient *http.Client
 }
 
-// NewClient returns a Client with the default HTTP client and base URL.
-func NewClient() *Client {
-	return &Client{
-		baseURL:    defaultBaseURL,
-		httpClient: http.DefaultClient,
+type Option func(*Client)
+
+func WithHTTPClient(httpClient *http.Client) Option {
+	return func(c *Client) {
+		if httpClient == nil {
+			httpClient = http.DefaultClient
+		}
+		c.httpClient = httpClient
 	}
 }
 
-// NewClientWithHTTP returns a Client that uses the given HTTP client.
-func NewClientWithHTTP(httpClient *http.Client) *Client {
-	if httpClient == nil {
-		httpClient = http.DefaultClient
-	}
-	return &Client{
+// NewClient returns a Client with the default HTTP client and base URL.
+func NewClient(option ...Option) *Client {
+	c := &Client{
 		baseURL:    defaultBaseURL,
-		httpClient: httpClient,
+		httpClient: http.DefaultClient,
 	}
+	for _, opt := range option {
+		opt(c)
+	}
+	return c
 }
 
 // AggTrades fetches compressed aggregate trades.
@@ -51,11 +54,7 @@ func (c *Client) AggTrades(req *AggTradeRequest) ([]AggTrade, error) {
 		return nil, err
 	}
 
-	var trades []AggTrade
-	if err := json.Unmarshal(body, &trades); err != nil {
-		return nil, fmt.Errorf("failed to parse JSON: %w", err)
-	}
-	return trades, nil
+	return NewAggTrades(WithJson[AggTrade](body))
 }
 
 // Candles fetches kline/candlestick data.
@@ -75,11 +74,7 @@ func (c *Client) Candles(req *CandleRequest) ([]Kline, error) {
 		return nil, err
 	}
 
-	var klines []Kline
-	if err := json.Unmarshal(body, &klines); err != nil {
-		return nil, fmt.Errorf("failed to parse JSON: %w", err)
-	}
-	return klines, nil
+	return NewKlines(WithJson[Kline](body))
 }
 
 func (c *Client) get(url string) ([]byte, error) {

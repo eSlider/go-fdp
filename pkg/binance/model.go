@@ -1,17 +1,21 @@
 package binance
 
 import (
-	"encoding/json"
-	"errors"
 	"fmt"
-	"strconv"
 	"strings"
-	"time"
-
+	v3 "sync-v3/pkg/binance/v3"
 	"sync-v3/pkg/data"
+	"time"
 )
 
-// ETLStatus - represents asset processing status
+// Event - event to store daily informations
+type Event struct {
+	Date   time.Time
+	Klines []v3.KlineParquet
+	Info   string
+}
+
+// ETLStatus - represents asset-processing status
 type ETLStatus int
 
 var StatusList = []string{
@@ -42,11 +46,8 @@ const (
 	StatusError ETLStatus = iota
 	StatusZipDownloading
 	StatusZipReading
-	StatusZipPersisting
 	StatusZipReady
 	StatusCSVReading
-	StatusCSV2ParquetTransforming
-	StatusParquetPersisting
 	StatusParquetReady
 )
 
@@ -368,205 +369,4 @@ func (q *HistoryAsset) IsToday() bool {
 // Transformer - interface for transforming data to several formats
 type Transformer interface {
 	Parquet() (any, error) // Parquet - transforms the data to parquet format
-}
-
-// Kline - binance kline data
-type Kline struct {
-	OpenTime       int64   `csv:"0"`
-	OpenPrice      float64 `csv:"1"`
-	HighPrice      float64 `csv:"2"`
-	LowPrice       float64 `csv:"3"`
-	ClosePrice     float64 `csv:"4"`
-	Volume         float64 `csv:"5"`
-	CloseTime      int64   `csv:"6"`
-	QuoteVolume    float64 `csv:"7"`
-	NumberOfTrades int64   `csv:"8"`
-	TakerBuyVolume float64 `csv:"9"`
-	TakerBuyQuote  float64 `csv:"10"`
-	Ignore         float64 `csv:"11"`
-}
-
-func (k *Kline) String() string {
-	openTime := data.AnyTimestampToTime(k.OpenTime)
-	closeTime := data.AnyTimestampToTime(k.CloseTime)
-
-	// return only time human readable
-	return fmt.Sprintf("%s - %s", openTime.Format("2006-01-02 15:04:05"), closeTime.Format("2006-01-02 15:04:05"))
-}
-
-func strToFloat(s string) float64 {
-	f, err := strconv.ParseFloat(s, 64)
-	if err != nil {
-		return 0
-	}
-	return f
-}
-
-func (k *Kline) UnmarshalJSON(data []byte) error {
-	// Intermediate slice for mixed types
-	var tmp []any
-	if err := json.Unmarshal(data, &tmp); err != nil {
-		return err
-	}
-
-	// Assign by position (handle type assertions)
-	k.OpenTime = int64(tmp[0].(float64))
-	k.OpenPrice = strToFloat(tmp[1].(string))
-	k.HighPrice = strToFloat(tmp[2].(string))
-	k.LowPrice = strToFloat(tmp[3].(string))
-	k.ClosePrice = strToFloat(tmp[4].(string))
-	k.Volume = strToFloat(tmp[5].(string))
-	k.CloseTime = int64(tmp[6].(float64))
-	k.QuoteVolume = strToFloat(tmp[7].(string))
-	k.NumberOfTrades = int64(tmp[8].(float64))
-	k.TakerBuyVolume = strToFloat(tmp[9].(string))
-	k.TakerBuyQuote = strToFloat(tmp[10].(string))
-	k.Ignore = strToFloat(tmp[11].(string))
-
-	return nil
-}
-
-// AggTrade - binance aggregated trade data
-// CSV columns order (as in Binance public data files):
-// 0: a (Aggregate tradeId)
-// 1: p (Price)
-// 2: q (Quantity)
-// 3: f (First tradeId)
-// 4: l (Last tradeId)
-// 5: T (Timestamp in milliseconds)
-// 6: m (Is buyer the market maker)
-// 7: M (IsBestPriceMatch)
-//
-// Example row:
-//
-//	743,309.77000000,0.35856000,804,805,1502958744048,False,True
-//
-// Ref: https://data.binance.vision/?prefix=data/spot/daily/aggTrades/
-// Example ZIP-File: https://data.binance.vision/data/spot/daily/aggTrades/BTCUSDT/BTCUSDT-aggTrades-2025-12-10.zip
-// and Spot API docs: https://binance-docs.github.io/apidocs/spot/en/#compressed-aggregate-trades-list
-type AggTrade struct {
-	AggTradeID       int64   `csv:"0"` // a (Aggregate tradeId)
-	Price            float64 `csv:"1"` // p (Price)
-	Quantity         float64 `csv:"2"` // q (Quantity)
-	FirstTradeID     int64   `csv:"3"` // f (First tradeId)
-	LastTradeID      int64   `csv:"4"` // l (Last tradeId)
-	Timestamp        int64   `csv:"5"` // T (Timestamp in milliseconds)
-	IsBuyerMaker     bool    `csv:"6"` // m (Is buyer the market maker)
-	IsBestPriceMatch bool    `csv:"7"` // M (IsBestPriceMatch)
-}
-
-type ParquetAggTrade struct {
-	Time int32 `parquet:"name=open_time,type=INT32, convertedtype=TIME_MILLIS"` // Stroing time only, without date
-
-	AggTradeID   int64 `parquet:"name=agg_trade_id,type=INT64,convertedtype=UINT_64"`
-	FirstTradeID int64 `parquet:"name=first_trade_id,type=INT64,convertedtype=UINT_64"`
-	LastTradeID  int64 `parquet:"name=last_trade_id,type=INT64,convertedtype=UINT_64"`
-
-	Price    float64 `parquet:"name=price,type=DOUBLE"`
-	Quantity float64 `parquet:"name=quantity,type=DOUBLE"`
-
-	IsBuyerMaker     bool `parquet:"name=is_buyer_maker,type=BOOLEAN"`
-	IsBestPriceMatch bool `parquet:"name=is_best_price_match,type=BOOLEAN"`
-}
-
-func (a *AggTrade) Parquet() (*ParquetAggTrade, error) {
-	if a == nil {
-		return nil, errors.New("a is nil")
-	}
-	if a.Timestamp == 0 {
-		return nil, errors.New("timestamp is zero")
-	}
-
-	timestamp := data.AnyTimestampToTime(a.Timestamp)
-	if timestamp == nil {
-		return nil, errors.New("invalid timestamp")
-	}
-
-	// Get time, from midnight without date (only this day milliseconds) truncated.
-	timeMs := int32(
-		timestamp.UnixMilli() - timestamp.Truncate(24*time.Hour).UnixMilli(),
-	)
-
-	return &ParquetAggTrade{
-		Time:             timeMs,
-		AggTradeID:       a.AggTradeID,
-		Price:            a.Price,
-		Quantity:         a.Quantity,
-		FirstTradeID:     a.FirstTradeID,
-		LastTradeID:      a.LastTradeID,
-		IsBuyerMaker:     a.IsBuyerMaker,
-		IsBestPriceMatch: a.IsBestPriceMatch,
-	}, nil
-}
-
-// ToAggTrade - convert parquet aggTrade back to AggTrade
-func (p *ParquetAggTrade) ToAggTrade(date time.Time) *AggTrade {
-	// Reconstruct timestamp
-	// date should be midnight of the day
-	timestamp := date.Add(time.Duration(p.Time) * time.Millisecond)
-
-	return &AggTrade{
-		AggTradeID:       p.AggTradeID,
-		Price:            p.Price,
-		Quantity:         p.Quantity,
-		FirstTradeID:     p.FirstTradeID,
-		LastTradeID:      p.LastTradeID,
-		Timestamp:        timestamp.UnixMilli(),
-		IsBuyerMaker:     p.IsBuyerMaker,
-		IsBestPriceMatch: p.IsBestPriceMatch,
-	}
-}
-
-type ParquetKline struct {
-	OpenTime int32   `parquet:"name=open_time,type=INT32, convertedtype=TIME_MILLIS" json:"open_time"`
-	Open     float64 `parquet:"name=open_price, type=DOUBLE" json:"open_price"`
-	High     float64 `parquet:"name=high_price, type=DOUBLE" json:"high_price"`
-	Low      float64 `parquet:"name=low_price, type=DOUBLE" json:"low_price"`
-	Close    float64 `parquet:"name=close_price, type=DOUBLE" json:"close_price"`
-	Volume   float64 `parquet:"name=volume, type=DOUBLE" json:"volume"`
-}
-
-// ToKline - convert parquet kline back to Kline
-func (p *ParquetKline) ToKline(date time.Time) *Kline {
-	// Reconstruct open time
-	// date should be midnight of the day
-	openTime := date.Add(time.Duration(p.OpenTime) * time.Millisecond)
-
-	return &Kline{
-		OpenTime: openTime.UnixMilli(),
-		// CloseTime: inferred or left 0, caller might need to set it if frame is known
-		OpenPrice:  p.Open,
-		HighPrice:  p.High,
-		LowPrice:   p.Low,
-		ClosePrice: p.Close,
-		Volume:     p.Volume,
-	}
-}
-
-// Parquet - convert kline to parquet format
-func (k *Kline) Parquet() (*ParquetKline, error) {
-	if k == nil {
-		return nil, errors.New("ParquetKline is nil")
-	}
-
-	if k.OpenTime == 0 {
-		return nil, errors.New("open time is zero")
-	}
-
-	openTime := data.AnyTimestampToTime(k.OpenTime)
-	// Get time, from middle night without date(only this day milliseconds) truncated.
-	openTimeMs := int32(
-		openTime.UnixMilli() - openTime.Truncate(24*time.Hour).UnixMilli(),
-	)
-
-	return &ParquetKline{
-		OpenTime: openTimeMs,
-		// The close time should be calculated from the open time and the interval between klines.
-		// For example: 1m = 60 seconds, so the close time should be: open time + 60 seconds - 1 millisecond.
-		Open:   k.OpenPrice,
-		High:   k.HighPrice,
-		Low:    k.LowPrice,
-		Close:  k.ClosePrice,
-		Volume: k.Volume,
-	}, nil
 }

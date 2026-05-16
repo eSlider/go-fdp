@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"sync"
 	"time"
 
@@ -60,7 +61,9 @@ func (s *MarketService) fetchAggTradesFromAPI(ctx context.Context, req domain.Ma
 	startMs := req.From.UnixMilli()
 	endMs := req.To.UnixMilli()
 
-	trades, err := v3.NewClient().AggTrades(&v3.AggTradeRequest{
+	trades, err := v3.NewClient(
+		v3.WithHTTPClient(http.DefaultClient),
+	).AggTrades(&v3.AggTradeRequest{
 		Base: v3.SymbolRequest{
 			Symbol:    req.Market,
 			StartTime: &startMs,
