@@ -9,10 +9,11 @@ import (
 )
 
 func TestAPI_GetCurrentAggTrades(t *testing.T) {
+	ctx := t.Context()
 	now := time.Now().UTC()
 	start := now.Add(-10 * time.Minute)
 
-	trades, err := AggTrades(&AggTradeRequest{
+	trades, err := AggTrades(ctx, &AggTradeRequest{
 		Base: SymbolRequest{
 			Symbol:    "BTCUSDT",
 			StartTime: new(start.UnixMilli()),
@@ -32,7 +33,7 @@ func TestAPI_GetCurrentAggTrades(t *testing.T) {
 		assert.False(t, ts.After(now))
 	}
 
-	candles, err := Klines(&KlineRequest{
+	candles, err := Klines(ctx, &KlineRequest{
 		Base: SymbolRequest{
 			Symbol:    "BTCUSDT",
 			StartTime: new(start.UnixMilli()),

@@ -43,13 +43,8 @@ var BaseUrls = []string{
 	"https://api4.binance.com",
 }
 
-var ctx = context.Background()
-
 // SymbolRequest is the common symbol and time-range query parameters.
 type SymbolRequest struct {
-	// Exclude context.Context to avoid circular dependency
-	Context context.Context `json:"-" validate:"-"`
-
 	Symbol    string `in:"query=symbol;required" validate:"required"`
 	StartTime *int64 `in:"query=startTime;omitempty"`
 	EndTime   *int64 `in:"query=endTime;omitempty"`
@@ -63,20 +58,14 @@ type AggTradeRequest struct {
 	Limit  int64  `in:"query=limit;omitempty"`
 }
 
-// Use a configured HTTP client with a timeout to prevent hanging
-// Binance API rate limits are primarily governed by two categories: Request Weight limits, which apply per IP address, and Order limits, which apply per API key.  The current hard limits for the Spot API are 6,000 request weight per minute, 100 orders per 10 seconds, and 200,000 orders per 24 hours.
-// Request Weight: The limit is 6,000 per minute (updated in August 2023).  Different endpoints consume different amounts of weight; for example, a single symbol query costs 1 weight, while fetching all symbols may cost significantly more.
-// Order Limits: Users are restricted to 100 new orders every 10 seconds and 200,000 orders every 24 hours.  These limits are specific to the API key used.
-// WebSocket Limits: There is a limit of 300 connections per attempt every 5 minutes per IP address.
-// Machine Learning (ML) Limits: Binance employs ML to detect abusive trading behavior, such as front-running or excessive order cancellation. Violations can result in bans ranging from 5 minutes to 3 days.
-// Web Application Firewall (WAF): Excessive requests or malicious patterns can trigger HTTP 403 errors, typically resulting in a 5-minute ban per IP, though longer bans may apply for severe violations.
-// If you exceed these limits, you will receive an HTTP 429 status code.  To manage limits, you can query the current status using the /api/v3/exchangeInfo endpoint, which returns the rateLimits array containing the current usage count and limits for each interval.
+// Use a configured HTTP client with a timeout to prevent hanging.
+// IP limits: 6000 request weight per minute; 429 on violation; 418 when banned after repeated 429s.
+// See: https://developers.binance.com/docs/derivatives/portfolio-margin-pro/general-info#ip-limits
 var client = &http.Client{
-	// Let insecure, skip TLS verification
 	Transport: &http.Transport{TLSClientConfig: &tls.Config{
 		InsecureSkipVerify: true,
 	}},
-	Timeout: 10 * time.Second,
+	Timeout: 30 * time.Second,
 }
 
 type ErrorResponse struct {
@@ -84,53 +73,93 @@ type ErrorResponse struct {
 	Msg  string `json:"msg"`
 }
 
-func GetCast[T any](path string, req any) (l []*T, err error) {
+func GetCast[T any](ctx context.Context, path string, req any) (l []*T, err error) {
 	params, err := data.Params(req)
 	if err != nil {
 		return nil, fmt.Errorf("invalid request: %w", err)
 	}
 
-	url := fmt.Sprintf("%s/%s?%s", defaultBaseURL, path, params)
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
+	url := fmt.Sprintf("%s/%s?%s", dataApiBaseURL, path, params)
 
-	resp, err := client.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("failed to make request: %w", err)
-
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-
-		// Rewind the body to allow for retry, and get the error message
-		//resx, err := io.ReadAll(resp.Body)
-		//if err != nil {
-		//	return nil, fmt.Errorf("failed to read response body: %w", err)
-		//}
-		var er ErrorResponse
-		if err = json.NewDecoder(resp.Body).Decode(&er); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	var lastLimitErr *RateLimitError
+	for attempt := 0; attempt < maxRequestAttempts; attempt++ {
+		if err := defaultIPLimiter.waitIfHeavy(ctx); err != nil {
+			return nil, err
 		}
 
-		return nil, fmt.Errorf("API error %d, %d, %s", resp.StatusCode, er.Code, er.Msg)
+		httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create request: %w", err)
+		}
+
+		resp, err := client.Do(httpReq)
+		if err != nil {
+			return nil, fmt.Errorf("failed to make request: %w", err)
+		}
+
+		defaultIPLimiter.updateFromHeaders(resp.Header)
+		if resp.StatusCode == http.StatusOK {
+			if err = json.NewDecoder(resp.Body).Decode(&l); err != nil {
+				resp.Body.Close()
+				return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+			}
+			resp.Body.Close()
+			return l, nil
+		}
+
+		errResp, decodeErr := DecodeAPIError(resp)
+		resp.Body.Close()
+
+		// Retry after rate limit
+		if isRetryableStatus(resp.StatusCode) && attempt < maxRequestAttempts-1 {
+			wait := retryAfterDuration(resp.Header, resp.StatusCode, attempt)
+			lastLimitErr = &RateLimitError{
+				StatusCode: resp.StatusCode,
+				RetryAfter: wait,
+				API:        errResp,
+			}
+			if err := sleepContext(ctx, wait); err != nil {
+				return nil, err
+			}
+			continue
+		}
+
+		if decodeErr != nil {
+			return nil, fmt.Errorf("http %d: %w", resp.StatusCode, decodeErr)
+		}
+
+		// IP limits exceeded
+		if isRetryableStatus(resp.StatusCode) {
+			return nil, &RateLimitError{
+				StatusCode: resp.StatusCode,
+				RetryAfter: retryAfterDuration(resp.Header, resp.StatusCode, attempt),
+				API:        errResp,
+			}
+		}
+		return nil, fmt.Errorf("API error %d, %d, %s", resp.StatusCode, errResp.Code, errResp.Msg)
 	}
 
-	if err = json.NewDecoder(resp.Body).Decode(&l); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	if lastLimitErr != nil {
+		return nil, lastLimitErr
 	}
+	return nil, fmt.Errorf("binance request failed after %d attempts", maxRequestAttempts)
+}
 
-	return l, nil
+// DecodeAPIError decodes the API error response from Binance.
+func DecodeAPIError(resp *http.Response) (er *ErrorResponse, err error) {
+	er = new(ErrorResponse)
+	if err := json.NewDecoder(resp.Body).Decode(er); err != nil {
+		return nil, fmt.Errorf("unmarshal error body: %w", err)
+	}
+	return er, nil
 }
 
 // AggTrades fetches compressed aggregate trades.
-func AggTrades(req *AggTradeRequest) ([]*AggTrade, error) {
-	return GetCast[AggTrade]("api/v3/aggTrades", req)
+func AggTrades(ctx context.Context, req *AggTradeRequest) ([]*AggTrade, error) {
+	return GetCast[AggTrade](ctx, "api/v3/aggTrades", req)
 }
 
 // Klines fetches kline/candlestick data.
-func Klines(req *KlineRequest) ([]*Kline, error) {
-	return GetCast[Kline]("api/v3/klines", req)
+func Klines(ctx context.Context, req *KlineRequest) ([]*Kline, error) {
+	return GetCast[Kline](ctx, "api/v3/klines", req)
 }
