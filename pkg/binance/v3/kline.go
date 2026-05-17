@@ -21,6 +21,14 @@ import (
 //	return
 //}
 
+// KlineRequest is the query for GET /api/v3/klines.
+type KlineRequest struct {
+	Base     SymbolRequest
+	Interval string  `in:"query=interval;required" validate:"required"`
+	TimeZone *string `in:"query=timeZone;omitempty"`
+	Limit    int64   `in:"query=limit;omitempty"`
+}
+
 // Kline is a candle returned by GET /api/v3/klines.
 type Kline struct {
 	OpenTime       int64   `csv:"0"`
