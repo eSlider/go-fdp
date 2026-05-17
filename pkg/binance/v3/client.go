@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sync-v3/pkg/data"
 )
 
 const defaultBaseURL = "https://api.binance.com"
@@ -39,45 +40,29 @@ func NewClient(option ...Option) *Client {
 
 // AggTrades fetches compressed aggregate trades.
 func (c *Client) AggTrades(req *AggTradeRequest) ([]AggTrade, error) {
-	if err := req.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid request: %w", err)
-	}
-
-	params, err := req.urlParams()
-	if err != nil {
-		return nil, fmt.Errorf("invalid request: %w", err)
-	}
-
-	url := fmt.Sprintf("%s/api/v3/aggTrades?%s", c.baseURL, params)
-	body, err := c.get(url)
+	body, err := c.Get("api/v3/aggTrades", req)
 	if err != nil {
 		return nil, err
 	}
-
 	return NewAggTrades(WithJson[AggTrade](body))
 }
 
 // Candles fetches kline/candlestick data.
 func (c *Client) Candles(req *CandleRequest) ([]Kline, error) {
-	if err := req.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid request: %w", err)
-	}
-
-	params, err := req.urlParams()
-	if err != nil {
-		return nil, fmt.Errorf("invalid request: %w", err)
-	}
-
-	url := fmt.Sprintf("%s/api/v3/klines?%s", c.baseURL, params)
-	body, err := c.get(url)
+	body, err := c.Get("api/v3/klines", req)
 	if err != nil {
 		return nil, err
 	}
-
 	return NewKlines(WithJson[Kline](body))
 }
 
-func (c *Client) get(url string) ([]byte, error) {
+func (c *Client) Get(path string, req any) ([]byte, error) {
+	params, err := data.Params(req)
+	if err != nil {
+		return nil, fmt.Errorf("invalid request: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/%s?%s", c.baseURL, path, params)
 	resp, err := c.httpClient.Get(url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to make request: %w", err)

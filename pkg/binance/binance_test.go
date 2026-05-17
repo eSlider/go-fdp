@@ -140,37 +140,6 @@ func TestAPI_GetCurrentCandles(t *testing.T) {
 	}
 }
 
-func TestAPI_GetCurrentAggTrades(t *testing.T) {
-	skipIntegration(t)
-
-	now := time.Now().UTC()
-	start := now.Add(-10 * time.Minute)
-
-	raw, err := v3.NewClient().AggTrades(&v3.AggTradeRequest{
-		Base: v3.SymbolRequest{
-			Symbol:    "BTCUSDT",
-			StartTime: new(start.UnixMilli()),
-			EndTime:   new(now.UnixMilli()),
-		},
-		Limit: 100,
-	})
-	require.NoError(t, err)
-	trades := raw
-	require.NotEmpty(t, trades)
-
-	first := trades[0]
-	assert.NotZero(t, first.AggTradeID)
-	assert.NotZero(t, first.Price)
-	assert.NotZero(t, first.Timestamp)
-	assert.LessOrEqual(t, first.FirstTradeID, first.LastTradeID)
-
-	for _, trade := range trades {
-		ts := time.UnixMilli(trade.Timestamp)
-		assert.False(t, ts.Before(start))
-		assert.False(t, ts.After(now))
-	}
-}
-
 func TestETL_HistoricalAggTrades(t *testing.T) {
 	skipIntegration(t)
 

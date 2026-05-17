@@ -2,41 +2,38 @@ package v3
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestAggTradeRequestValidate(t *testing.T) {
-	err := (&AggTradeRequest{}).Validate()
-	require.Error(t, err)
+func TestAPI_GetCurrentAggTrades(t *testing.T) {
 
-	err = (&AggTradeRequest{Base: SymbolRequest{Symbol: "BTCUSDT"}}).Validate()
-	require.NoError(t, err)
-}
+	now := time.Now().UTC()
+	start := now.Add(-10 * time.Minute)
 
-func TestCandleRequestValidate(t *testing.T) {
-	err := (&CandleRequest{Base: SymbolRequest{Symbol: "BTCUSDT"}}).Validate()
-	require.Error(t, err)
-
-	err = (&CandleRequest{
-		Base:     SymbolRequest{Symbol: "BTCUSDT"},
-		Interval: "1m",
-	}).Validate()
-	require.NoError(t, err)
-}
-
-func TestRequestURLParams(t *testing.T) {
-	start := int64(1000)
-	req := &AggTradeRequest{
+	raw, err := NewClient().AggTrades(&AggTradeRequest{
 		Base: SymbolRequest{
-			Symbol:    "ETHUSDT",
-			StartTime: &start,
+			Symbol:    "BTCUSDT",
+			StartTime: new(start.UnixMilli()),
+			EndTime:   new(now.UnixMilli()),
 		},
 		Limit: 100,
-	}
-	params, err := req.urlParams()
+	})
 	require.NoError(t, err)
-	assert.Contains(t, params, "symbol=ETHUSDT")
-	assert.Contains(t, params, "startTime=1000")
+	trades := raw
+	require.NotEmpty(t, trades)
+
+	first := trades[0]
+	assert.NotZero(t, first.AggTradeID)
+	assert.NotZero(t, first.Price)
+	assert.NotZero(t, first.Timestamp)
+	assert.LessOrEqual(t, first.FirstTradeID, first.LastTradeID)
+
+	for _, trade := range trades {
+		ts := time.UnixMilli(trade.Timestamp)
+		assert.False(t, ts.Before(start))
+		assert.False(t, ts.After(now))
+	}
 }
