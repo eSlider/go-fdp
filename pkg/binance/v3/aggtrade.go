@@ -2,7 +2,7 @@ package v3
 
 import (
 	"errors"
-	"sync-v3/pkg/data"
+	"github.com/eslider/go-binance-fdp/pkg/data"
 	"time"
 
 	"github.com/go-viper/mapstructure/v2"

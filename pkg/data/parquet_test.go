@@ -5,7 +5,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
-	"sync-v3/pkg/fs"
+	"github.com/eslider/go-binance-fdp/pkg/fs"
 	"testing"
 	"time"
 )

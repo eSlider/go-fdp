@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"sync-v3/pkg/binance/v3"
-	"sync-v3/pkg/data"
-	"sync-v3/pkg/fs"
+	"github.com/eslider/go-binance-fdp/pkg/binance/v3"
+	"github.com/eslider/go-binance-fdp/pkg/data"
+	"github.com/eslider/go-binance-fdp/pkg/fs"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -124,7 +124,7 @@ func TestAPI_GetCurrentCandles(t *testing.T) {
 
 	for _, market := range []string{"BTCUSDT", "ETHUSDT"} {
 		t.Run(market, func(t *testing.T) {
-			candles, err := v3.Klines(&v3.KlineRequest{
+			candles, err := v3.Klines(t.Context(), &v3.KlineRequest{
 				Base: v3.SymbolRequest{
 					Symbol:    market,
 					StartTime: new(start),

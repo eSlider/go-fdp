@@ -3,7 +3,7 @@ package domain
 import (
 	"time"
 
-	"sync-v3/pkg/data"
+	"github.com/eslider/go-binance-fdp/pkg/data"
 )
 
 type MarketType string

@@ -1,4 +1,4 @@
-module sync-v3
+module github.com/eslider/go-binance-fdp
 
 go 1.26.3
 

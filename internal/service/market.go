@@ -7,11 +7,11 @@ import (
 	"sync"
 	"time"
 
-	"sync-v3/internal/domain"
-	"sync-v3/internal/repository"
-	"sync-v3/pkg/binance"
-	"sync-v3/pkg/binance/v3"
-	"sync-v3/pkg/data"
+	"github.com/eslider/go-binance-fdp/internal/domain"
+	"github.com/eslider/go-binance-fdp/internal/repository"
+	"github.com/eslider/go-binance-fdp/pkg/binance"
+	"github.com/eslider/go-binance-fdp/pkg/binance/v3"
+	"github.com/eslider/go-binance-fdp/pkg/data"
 )
 
 type MarketService struct {
@@ -57,7 +57,7 @@ func (s *MarketService) GetAggTrades(ctx context.Context, req domain.MarketDataR
 
 // fetchAggTradesFromAPI fetches aggTrades directly from Binance API for today's queries
 func (s *MarketService) fetchAggTradesFromAPI(ctx context.Context, req domain.MarketDataRequest) ([]*domain.AggTrade, error) {
-	trades, err := v3.AggTrades(&v3.AggTradeRequest{
+	trades, err := v3.AggTrades(ctx, &v3.AggTradeRequest{
 		Base: v3.SymbolRequest{
 			Symbol:    req.Market,
 			StartTime: new(req.From.UnixMilli()),

@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"sync-v3/pkg/fs"
+	"github.com/eslider/go-binance-fdp/pkg/fs"
 
 	"github.com/jszwec/csvutil"
 )

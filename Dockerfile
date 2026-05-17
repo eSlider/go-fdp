@@ -12,6 +12,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
+ENV GOTOOLCHAIN=auto
+
 # Copy go mod files first for better caching
 COPY go.mod go.sum ./
 RUN go mod download
@@ -25,7 +27,7 @@ COPY . .
 # -trimpath removes file system paths from binary
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=1 GOOS=linux \
+    CGO_ENABLED=1 GOOS=linux GOTOOLCHAIN=auto \
     go build -p $(nproc) \
     -ldflags="-s -w" \
     -tags="no_duckdb_arrow" \

@@ -9,9 +9,9 @@ import (
 	"strconv"
 	"time"
 
-	"sync-v3/internal/domain"
-	"sync-v3/pkg/data"
-	"sync-v3/pkg/fs"
+	"github.com/eslider/go-binance-fdp/internal/domain"
+	"github.com/eslider/go-binance-fdp/pkg/data"
+	"github.com/eslider/go-binance-fdp/pkg/fs"
 
 	_ "github.com/duckdb/duckdb-go/v2"
 )

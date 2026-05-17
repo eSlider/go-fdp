@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"sync-v3/internal/repository"
-	"sync-v3/internal/service"
-	"sync-v3/pkg/binance"
+	"github.com/eslider/go-binance-fdp/internal/repository"
+	"github.com/eslider/go-binance-fdp/internal/service"
+	"github.com/eslider/go-binance-fdp/pkg/binance"
 )
 
 // TestAggTradesHandler tests the /v1/aggtrades endpoint

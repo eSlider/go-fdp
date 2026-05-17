@@ -1,0 +1,27 @@
+name: Go
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.x"
+          cache: true
+
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends gcc g++
+
+      - name: Test
+        run: go test -tags no_duckdb_arrow -count=1 ./...
+
+      - name: Build
+        run: go build -tags no_duckdb_arrow -o /tmp/server ./main.go

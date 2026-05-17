@@ -1,6 +1,11 @@
 # IDE's
 /.idea
 
+# Local secrets / scratch scripts
+voice.sh
+.env
+.env.*
+
 # Parquet/cache storage at repo root (not the pkg/data Go package)
 /data/
 

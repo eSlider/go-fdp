@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"sync-v3/internal/domain"
+	"github.com/eslider/go-binance-fdp/internal/domain"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

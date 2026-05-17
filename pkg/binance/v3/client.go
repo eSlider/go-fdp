@@ -5,7 +5,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net/http"
-	"sync-v3/pkg/data"
+	"github.com/eslider/go-binance-fdp/pkg/data"
 	"time"
 
 	"github.com/goccy/go-json"

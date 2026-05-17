@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync-v3/pkg/fs"
+	"github.com/eslider/go-binance-fdp/pkg/fs"
 	"time"
 
 	"github.com/chonla/format"

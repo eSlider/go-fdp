@@ -10,10 +10,10 @@ import (
 	"os"
 	"strings"
 
-	"sync-v3/internal/handler"
-	"sync-v3/internal/repository"
-	"sync-v3/internal/service"
-	"sync-v3/pkg/binance"
+	"github.com/eslider/go-binance-fdp/internal/handler"
+	"github.com/eslider/go-binance-fdp/internal/repository"
+	"github.com/eslider/go-binance-fdp/internal/service"
+	"github.com/eslider/go-binance-fdp/pkg/binance"
 
 	"github.com/gorilla/mux"
 )

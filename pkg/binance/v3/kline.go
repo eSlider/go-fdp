@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sync-v3/pkg/data"
+	"github.com/eslider/go-binance-fdp/pkg/data"
 	"time"
 )
 

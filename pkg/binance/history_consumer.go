@@ -9,9 +9,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync-v3/pkg/binance/v3"
-	"sync-v3/pkg/data"
-	"sync-v3/pkg/fs"
+	"github.com/eslider/go-binance-fdp/pkg/binance/v3"
+	"github.com/eslider/go-binance-fdp/pkg/data"
+	"github.com/eslider/go-binance-fdp/pkg/fs"
 	"time"
 
 	"github.com/google/uuid"
@@ -642,7 +642,7 @@ func (s *HistoryConsumer) RefreshLastHourAggTrades(asset *HistoryAsset) error {
 
 // fetchHourAggTradesData fetches aggTrades data for a specific time range
 func (s *HistoryConsumer) fetchHourAggTradesData(asset *HistoryAsset, start, end time.Time) ([]*v3.AggTrade, error) {
-	return v3.AggTrades(&v3.AggTradeRequest{
+	return v3.AggTrades(s.ctx, &v3.AggTradeRequest{
 		Base: v3.SymbolRequest{
 			Symbol:    asset.Market,
 			StartTime: new(start.UnixMilli()),
@@ -654,7 +654,7 @@ func (s *HistoryConsumer) fetchHourAggTradesData(asset *HistoryAsset, start, end
 
 // fetchAggTradesFromID fetches aggTrades starting from a specific trade ID
 func (s *HistoryConsumer) fetchAggTradesFromID(asset *HistoryAsset, fromID int64) ([]*v3.AggTrade, error) {
-	return v3.AggTrades(&v3.AggTradeRequest{
+	return v3.AggTrades(s.ctx, &v3.AggTradeRequest{
 		Base: v3.SymbolRequest{
 			Symbol: asset.Market,
 		},
@@ -859,7 +859,7 @@ func (s *HistoryConsumer) RefreshLastHour(asset *HistoryAsset) error {
 // fetchHourData fetches kline data for a specific time range
 func (s *HistoryConsumer) fetchHourData(asset *HistoryAsset, start, end time.Time) ([]*v3.Kline, error) {
 	// Convert to milliseconds for API
-	return v3.Klines(&v3.KlineRequest{
+	return v3.Klines(s.ctx, &v3.KlineRequest{
 		Base: v3.SymbolRequest{
 			Symbol:    asset.Market,
 			StartTime: new(start.UnixMilli()),

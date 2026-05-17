@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"sync-v3/internal/domain"
-	"sync-v3/internal/repository"
-	"sync-v3/pkg/binance"
+	"github.com/eslider/go-binance-fdp/internal/domain"
+	"github.com/eslider/go-binance-fdp/internal/repository"
+	"github.com/eslider/go-binance-fdp/pkg/binance"
 )
 
 // TestGetAggTradesFromAPI tests fetching aggTrades directly from API for today's queries

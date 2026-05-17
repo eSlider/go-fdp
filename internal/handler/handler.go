@@ -3,9 +3,9 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
-	"sync-v3/internal/domain"
-	"sync-v3/internal/service"
-	"sync-v3/pkg/data"
+	"github.com/eslider/go-binance-fdp/internal/domain"
+	"github.com/eslider/go-binance-fdp/internal/service"
+	"github.com/eslider/go-binance-fdp/pkg/data"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/go-viper/mapstructure/v2"

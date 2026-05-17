@@ -3,8 +3,8 @@ package binance
 import (
 	"fmt"
 	"strings"
-	v3 "sync-v3/pkg/binance/v3"
-	"sync-v3/pkg/data"
+	v3 "github.com/eslider/go-binance-fdp/pkg/binance/v3"
+	"github.com/eslider/go-binance-fdp/pkg/data"
 	"time"
 )
 
