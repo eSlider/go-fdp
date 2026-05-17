@@ -40,20 +40,12 @@ func NewClient(option ...Option) *Client {
 
 // AggTrades fetches compressed aggregate trades.
 func (c *Client) AggTrades(req *AggTradeRequest) ([]AggTrade, error) {
-	body, err := c.Get("api/v3/aggTrades", req)
-	if err != nil {
-		return nil, err
-	}
-	return NewAggTrades(WithJson[AggTrade](body))
+	return NewAggTrades(GetAndCast[AggTrade]("api/v3/aggTrades", req))
 }
 
 // Candles fetches kline/candlestick data.
 func (c *Client) Candles(req *CandleRequest) ([]Kline, error) {
-	body, err := c.Get("api/v3/klines", req)
-	if err != nil {
-		return nil, err
-	}
-	return NewKlines(WithJson[Kline](body))
+	return NewKlines(GetAndCast[Kline]("api/v3/klines", req))
 }
 
 func (c *Client) Get(path string, req any) ([]byte, error) {

@@ -11,7 +11,13 @@ import (
 
 type NewAggTradeOption func(*[]AggTrade) error
 
-func WithJson[T any](body []byte) func(k *[]T) error {
+func GetAndCast[T any](path string, req any) func(k *[]T) error {
+	c := NewClient()
+	body, err := c.Get(path, req)
+	if err != nil {
+		return func(k *[]T) error { return err }
+	}
+
 	return func(k *[]T) error {
 		return json.Unmarshal(body, k)
 	}
