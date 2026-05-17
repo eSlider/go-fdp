@@ -1,36 +1,80 @@
 package v3
 
 import (
-	"encoding/json"
+	"context"
+	"crypto/tls"
 	"errors"
+	"fmt"
+	"net/http"
 	"sync-v3/pkg/data"
 	"time"
 
 	"github.com/go-viper/mapstructure/v2"
+	"github.com/goccy/go-json" // Fast drop-in replacement
 )
 
-type NewAggTradeOption func(*[]AggTrade) error
+var ctx = context.Background()
 
-func GetAndCast[T any](path string, req any) func(k *[]T) error {
-	c := NewClient()
-	body, err := c.Get(path, req)
-	if err != nil {
-		return func(k *[]T) error { return err }
-	}
-
-	return func(k *[]T) error {
-		return json.Unmarshal(body, k)
-	}
+// Use a configured HTTP client with a timeout to prevent hanging
+// Binance API rate limits are primarily governed by two categories: Request Weight limits, which apply per IP address, and Order limits, which apply per API key.  The current hard limits for the Spot API are 6,000 request weight per minute, 100 orders per 10 seconds, and 200,000 orders per 24 hours.
+// Request Weight: The limit is 6,000 per minute (updated in August 2023).  Different endpoints consume different amounts of weight; for example, a single symbol query costs 1 weight, while fetching all symbols may cost significantly more.
+// Order Limits: Users are restricted to 100 new orders every 10 seconds and 200,000 orders every 24 hours.  These limits are specific to the API key used.
+// WebSocket Limits: There is a limit of 300 connections per attempt every 5 minutes per IP address.
+// Machine Learning (ML) Limits: Binance employs ML to detect abusive trading behavior, such as front-running or excessive order cancellation. Violations can result in bans ranging from 5 minutes to 3 days.
+// Web Application Firewall (WAF): Excessive requests or malicious patterns can trigger HTTP 403 errors, typically resulting in a 5-minute ban per IP, though longer bans may apply for severe violations.
+// If you exceed these limits, you will receive an HTTP 429 status code.  To manage limits, you can query the current status using the /api/v3/exchangeInfo endpoint, which returns the rateLimits array containing the current usage count and limits for each interval.
+var client = &http.Client{
+	// Let insecure, skip TLS verification
+	Transport: &http.Transport{TLSClientConfig: &tls.Config{
+		InsecureSkipVerify: true,
+	}},
+	Timeout: 10 * time.Second,
 }
 
-func NewAggTrades(opts ...NewAggTradeOption) ([]AggTrade, error) {
-	trades := make([]AggTrade, 0)
-	for _, opt := range opts {
-		if err := opt(&trades); err != nil {
-			return nil, err
-		}
+type ErrorResponse struct {
+	Code int    `json:"code"`
+	Msg  string `json:"msg"`
+}
+
+func GetCast[T any](path string, req any) (l []*T, err error) {
+	params, err := data.Params(req)
+	if err != nil {
+		return nil, fmt.Errorf("invalid request: %w", err)
 	}
-	return trades, nil
+
+	url := fmt.Sprintf("%s/%s?%s", defaultBaseURL, path, params)
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to make request: %w", err)
+
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+
+		// Rewind the body to allow for retry, and get the error message
+		//resx, err := io.ReadAll(resp.Body)
+		//if err != nil {
+		//	return nil, fmt.Errorf("failed to read response body: %w", err)
+		//}
+		var er ErrorResponse
+		if err = json.NewDecoder(resp.Body).Decode(&er); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+		}
+
+		return nil, fmt.Errorf("API error %d, %d, %s", resp.StatusCode, er.Code, er.Msg)
+	}
+
+	if err = json.NewDecoder(resp.Body).Decode(&l); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+
+	return l, nil
 }
 
 // AggTrade - binance aggregated trade data
@@ -46,7 +90,7 @@ func NewAggTrades(opts ...NewAggTradeOption) ([]AggTrade, error) {
 //
 // Example row:
 //
-//	743,309.77000000,0.35856000,804,805,1502958744048,False,True
+//	743,309.77000000,"0.35856000","804",805,1502958744048,False,True
 //
 // Ref: https://data.binance.vision/?prefix=data/spot/daily/aggTrades/
 // Example ZIP-File: https://data.binance.vision/data/spot/daily/aggTrades/BTCUSDT/BTCUSDT-aggTrades-2025-12-10.zip

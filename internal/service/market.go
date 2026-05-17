@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"sync"
 	"time"
 
@@ -58,16 +57,11 @@ func (s *MarketService) GetAggTrades(ctx context.Context, req domain.MarketDataR
 
 // fetchAggTradesFromAPI fetches aggTrades directly from Binance API for today's queries
 func (s *MarketService) fetchAggTradesFromAPI(ctx context.Context, req domain.MarketDataRequest) ([]*domain.AggTrade, error) {
-	startMs := req.From.UnixMilli()
-	endMs := req.To.UnixMilli()
-
-	trades, err := v3.NewClient(
-		v3.WithHTTPClient(http.DefaultClient),
-	).AggTrades(&v3.AggTradeRequest{
+	trades, err := v3.AggTrades(&v3.AggTradeRequest{
 		Base: v3.SymbolRequest{
 			Symbol:    req.Market,
-			StartTime: &startMs,
-			EndTime:   &endMs,
+			StartTime: new(req.From.UnixMilli()),
+			EndTime:   new(req.To.UnixMilli()),
 		},
 		Limit: 1000,
 	})

@@ -9,11 +9,10 @@ import (
 )
 
 func TestAPI_GetCurrentAggTrades(t *testing.T) {
-
 	now := time.Now().UTC()
 	start := now.Add(-10 * time.Minute)
 
-	raw, err := NewClient().AggTrades(&AggTradeRequest{
+	trades, err := AggTrades(&AggTradeRequest{
 		Base: SymbolRequest{
 			Symbol:    "BTCUSDT",
 			StartTime: new(start.UnixMilli()),
@@ -22,18 +21,31 @@ func TestAPI_GetCurrentAggTrades(t *testing.T) {
 		Limit: 100,
 	})
 	require.NoError(t, err)
-	trades := raw
 	require.NotEmpty(t, trades)
-
-	first := trades[0]
-	assert.NotZero(t, first.AggTradeID)
-	assert.NotZero(t, first.Price)
-	assert.NotZero(t, first.Timestamp)
-	assert.LessOrEqual(t, first.FirstTradeID, first.LastTradeID)
-
 	for _, trade := range trades {
+		assert.NotZero(t, trade.AggTradeID)
+		assert.NotZero(t, trade.Price)
+		assert.NotZero(t, trade.Timestamp)
+		assert.LessOrEqual(t, trade.FirstTradeID, trade.LastTradeID)
 		ts := time.UnixMilli(trade.Timestamp)
 		assert.False(t, ts.Before(start))
 		assert.False(t, ts.After(now))
+	}
+
+	candles, err := Klines(&KlineRequest{
+		Base: SymbolRequest{
+			Symbol:    "BTCUSDT",
+			StartTime: new(start.UnixMilli()),
+			EndTime:   new(now.UnixMilli()),
+		},
+
+		Interval: "1m",
+		Limit:    10,
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, candles)
+	for _, candle := range candles {
+		assert.NotZero(t, candle.ClosePrice)
+		assert.NotZero(t, candle.OpenTime)
 	}
 }

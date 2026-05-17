@@ -1,72 +1,43 @@
 package v3
 
-import (
-	"fmt"
-	"io"
-	"net/http"
-	"sync-v3/pkg/data"
-)
+//Data is returned in ascending order. Oldest first, newest last.
+//All time and timestamp related fields are in milliseconds.
 
 const defaultBaseURL = "https://api.binance.com"
 
-// Client calls the Binance Spot REST API v3.
-type Client struct {
-	baseURL    string
-	httpClient *http.Client
-}
+// The base endpoint https://data-api.binance.vision can be used to access the following API endpoints that have NONE as security type:
+// GET /api/v3/aggTrades
+// GET /api/v3/avgPrice
+// GET /api/v3/depth
+// GET /api/v3/exchangeInfo
+// GET /api/v3/klines
+// GET /api/v3/ping
+// GET /api/v3/ticker
+// GET /api/v3/ticker/24hr
+// GET /api/v3/ticker/bookTicker
+// GET /api/v3/ticker/price
+// GET /api/v3/time
+// GET /api/v3/trades
+// GET /api/v3/uiKlines
+const dataApiBaseURL = "https://data-api.binance.vision"
 
-type Option func(*Client)
+// https://developers.binance.com/docs/derivatives/portfolio-margin-pro/general-info#general-api-information
+var BaseUrls = []string{
+	defaultBaseURL,
 
-func WithHTTPClient(httpClient *http.Client) Option {
-	return func(c *Client) {
-		if httpClient == nil {
-			httpClient = http.DefaultClient
-		}
-		c.httpClient = httpClient
-	}
-}
-
-// NewClient returns a Client with the default HTTP client and base URL.
-func NewClient(option ...Option) *Client {
-	c := &Client{
-		baseURL:    defaultBaseURL,
-		httpClient: http.DefaultClient,
-	}
-	for _, opt := range option {
-		opt(c)
-	}
-	return c
+	// The last 4 endpoints in the point above (api1-api4) might give better performance but have less stability. Please use whichever works best for your setup.
+	"https://api1.binance.com",
+	"https://api2.binance.com",
+	"https://api3.binance.com",
+	"https://api4.binance.com",
 }
 
 // AggTrades fetches compressed aggregate trades.
-func (c *Client) AggTrades(req *AggTradeRequest) ([]AggTrade, error) {
-	return NewAggTrades(GetAndCast[AggTrade]("api/v3/aggTrades", req))
+func AggTrades(req *AggTradeRequest) ([]*AggTrade, error) {
+	return GetCast[AggTrade]("api/v3/aggTrades", req)
 }
 
-// Candles fetches kline/candlestick data.
-func (c *Client) Candles(req *CandleRequest) ([]Kline, error) {
-	return NewKlines(GetAndCast[Kline]("api/v3/klines", req))
-}
-
-func (c *Client) Get(path string, req any) ([]byte, error) {
-	params, err := data.Params(req)
-	if err != nil {
-		return nil, fmt.Errorf("invalid request: %w", err)
-	}
-
-	url := fmt.Sprintf("%s/%s?%s", c.baseURL, path, params)
-	resp, err := c.httpClient.Get(url)
-	if err != nil {
-		return nil, fmt.Errorf("failed to make request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API error %d: %s", resp.StatusCode, string(body))
-	}
-	return body, nil
+// Klines fetches kline/candlestick data.
+func Klines(req *KlineRequest) ([]*Kline, error) {
+	return GetCast[Kline]("api/v3/klines", req)
 }

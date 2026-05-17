@@ -97,7 +97,7 @@ func TestAggTradeParquetRoundTrip(t *testing.T) {
 }
 
 func TestSortAggTradesByID(t *testing.T) {
-	trades := []v3.AggTrade{
+	trades := []*v3.AggTrade{
 		{AggTradeID: 5}, {AggTradeID: 2}, {AggTradeID: 8}, {AggTradeID: 1},
 	}
 	sortAggTradesByID(trades)
@@ -121,11 +121,10 @@ func TestAPI_GetCurrentCandles(t *testing.T) {
 	now := time.Now()
 	start := now.Add(-time.Minute).UnixMicro()
 	end := now.UnixMicro()
-	client := v3.NewClient()
 
 	for _, market := range []string{"BTCUSDT", "ETHUSDT"} {
 		t.Run(market, func(t *testing.T) {
-			candles, err := client.Candles(&v3.CandleRequest{
+			candles, err := v3.Klines(&v3.KlineRequest{
 				Base: v3.SymbolRequest{
 					Symbol:    market,
 					StartTime: new(start),

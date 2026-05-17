@@ -18,28 +18,15 @@ type Event struct {
 // ETLStatus - represents asset-processing status
 type ETLStatus int
 
-var StatusList = []string{
-	"error",
-	"zip-downloading",
-	"zip-reading",
-	"zip-persisting",
-	"zip-ready",
-
-	"csv-reading",
-	"csv-2-parquet-transforming",
-	"parquet-persisting",
-	"parquet-ready",
-	"parquet-downloading",
-	"parquet-reading",
-	"parquet-persisting",
-	"parquet-ready",
-	"parquet-downloading",
-	"transforming",
-	"reading_parquet",
-}
-
 func (s *ETLStatus) String() any {
-	return StatusList[*s]
+	return []string{
+		"error",
+		"zip-downloading",
+		"zip-reading",
+		"zip-ready",
+		"csv-reading",
+		"parquet-ready",
+	}[*s]
 }
 
 const (

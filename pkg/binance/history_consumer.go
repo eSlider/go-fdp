@@ -43,7 +43,6 @@ type HistoryConsumer struct {
 	cfg        *aws.Config         // AWS Config
 	client     *s3.Client          // S3 Client
 	downloader *manager.Downloader // S3 Downloader
-	api        *v3.Client          // Spot REST API v3
 	bucket     string              // Bucket
 	localDir   string              // Local directory for downloaded files
 
@@ -429,18 +428,17 @@ func NewHistoryConsumer(ctx context.Context) (*HistoryConsumer, error) {
 		bucket:          "data.binance.vision",
 		client:          client,
 		downloader:      downloader,
-		api:             v3.NewClient(),
 		cfg:             cfg,
 		ctx:             ctx,
 	}, nil
 }
 
 // FetchAndCacheCurrentDay fetches current day data from API and caches into hourly parquet files
-func (s *HistoryConsumer) FetchAndCacheCurrentDay(asset *HistoryAsset) ([]v3.Kline, error) {
+func (s *HistoryConsumer) FetchAndCacheCurrentDay(asset *HistoryAsset) ([]*v3.Kline, error) {
 	now := time.Now().UTC()
 	midnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 
-	var allCandles []v3.Kline
+	var allCandles []*v3.Kline
 
 	// Process each completed hour
 	currentHour := now.Hour()
@@ -501,11 +499,11 @@ func (s *HistoryConsumer) FetchAndCacheCurrentDay(asset *HistoryAsset) ([]v3.Kli
 
 // FetchAndCacheCurrentDayAggTrades fetches current day aggTrades from API and caches into hourly parquet files
 // Returns data even if caching fails (logs warnings for cache errors)
-func (s *HistoryConsumer) FetchAndCacheCurrentDayAggTrades(asset *HistoryAsset) ([]v3.AggTrade, error) {
+func (s *HistoryConsumer) FetchAndCacheCurrentDayAggTrades(asset *HistoryAsset) ([]*v3.AggTrade, error) {
 	now := time.Now().UTC()
 	midnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 
-	var allTrades []v3.AggTrade
+	var allTrades []*v3.AggTrade
 
 	// Process each completed hour
 	currentHour := now.Hour()
@@ -526,7 +524,7 @@ func (s *HistoryConsumer) FetchAndCacheCurrentDayAggTrades(asset *HistoryAsset) 
 			// Read from cache for completed hours
 			trades, err := s.readHourlyAggTradesParquet(parquetPath, midnight)
 			if err == nil && len(trades) > 0 {
-				allTrades = append(allTrades, trades...)
+				allTrades = append(allTrades, (trades)...)
 				continue
 			}
 		}
@@ -566,7 +564,7 @@ func (s *HistoryConsumer) FetchAndCacheCurrentDayAggTrades(asset *HistoryAsset) 
 }
 
 // fetchCurrentHourAggTrades fetches aggTrades for the current hour from API
-func (s *HistoryConsumer) fetchCurrentHourAggTrades(asset *HistoryAsset) ([]v3.AggTrade, error) {
+func (s *HistoryConsumer) fetchCurrentHourAggTrades(asset *HistoryAsset) ([]*v3.AggTrade, error) {
 	now := time.Now().UTC()
 	midnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 	currentHour := now.Hour()
@@ -595,7 +593,7 @@ func (s *HistoryConsumer) RefreshLastHourAggTrades(asset *HistoryAsset) error {
 	}
 
 	// Fetch new data
-	var newTrades []v3.AggTrade
+	var newTrades []*v3.AggTrade
 	var err error
 
 	if lastTradeID > 0 {
@@ -615,13 +613,13 @@ func (s *HistoryConsumer) RefreshLastHourAggTrades(asset *HistoryAsset) error {
 	}
 
 	// Read existing trades and merge
-	var existingTrades []v3.AggTrade
+	var existingTrades []*v3.AggTrade
 	if fs.FileExists(parquetPath) {
 		existingTrades, _ = s.readHourlyAggTradesParquet(parquetPath, midnight)
 	}
 
 	// Merge: keep existing trades that are not in new data
-	merged := make(map[int64]v3.AggTrade)
+	merged := make(map[int64]*v3.AggTrade)
 	for _, t := range existingTrades {
 		merged[t.AggTradeID] = t
 	}
@@ -630,7 +628,7 @@ func (s *HistoryConsumer) RefreshLastHourAggTrades(asset *HistoryAsset) error {
 	}
 
 	// Convert back to slice and sort
-	var allTrades []v3.AggTrade
+	var allTrades []*v3.AggTrade
 	for _, t := range merged {
 		allTrades = append(allTrades, t)
 	}
@@ -643,8 +641,8 @@ func (s *HistoryConsumer) RefreshLastHourAggTrades(asset *HistoryAsset) error {
 }
 
 // fetchHourAggTradesData fetches aggTrades data for a specific time range
-func (s *HistoryConsumer) fetchHourAggTradesData(asset *HistoryAsset, start, end time.Time) ([]v3.AggTrade, error) {
-	trades, err := s.api.AggTrades(&v3.AggTradeRequest{
+func (s *HistoryConsumer) fetchHourAggTradesData(asset *HistoryAsset, start, end time.Time) ([]*v3.AggTrade, error) {
+	return v3.AggTrades(&v3.AggTradeRequest{
 		Base: v3.SymbolRequest{
 			Symbol:    asset.Market,
 			StartTime: new(start.UnixMilli()),
@@ -652,32 +650,24 @@ func (s *HistoryConsumer) fetchHourAggTradesData(asset *HistoryAsset, start, end
 		},
 		Limit: 1000,
 	})
-	if err != nil {
-		return nil, err
-	}
-	return trades, nil
 }
 
 // fetchAggTradesFromID fetches aggTrades starting from a specific trade ID
-func (s *HistoryConsumer) fetchAggTradesFromID(asset *HistoryAsset, fromID int64) ([]v3.AggTrade, error) {
-	trades, err := s.api.AggTrades(&v3.AggTradeRequest{
+func (s *HistoryConsumer) fetchAggTradesFromID(asset *HistoryAsset, fromID int64) ([]*v3.AggTrade, error) {
+	return v3.AggTrades(&v3.AggTradeRequest{
 		Base: v3.SymbolRequest{
 			Symbol: asset.Market,
 		},
 		FromID: &fromID,
 		Limit:  1000,
 	})
-	if err != nil {
-		return nil, err
-	}
-	return trades, nil
 }
 
 // readHourlyAggTradesParquet reads aggTrades from an hourly parquet file
-func (s *HistoryConsumer) readHourlyAggTradesParquet(path string, date time.Time) ([]v3.AggTrade, error) {
+func (s *HistoryConsumer) readHourlyAggTradesParquet(path string, date time.Time) ([]*v3.AggTrade, error) {
 	recordCh, errCh := data.ReadParquet[v3.AggTradeParquet](path)
 
-	var trades []v3.AggTrade
+	var trades []*v3.AggTrade
 	for done := false; !done; {
 		select {
 		case record, ok := <-recordCh:
@@ -686,7 +676,7 @@ func (s *HistoryConsumer) readHourlyAggTradesParquet(path string, date time.Time
 				continue
 			}
 			// Convert ParquetAggTrade back to AggTrade
-			trades = append(trades, *record.ToAggTrade(date))
+			trades = append(trades, record.ToAggTrade(date))
 		case err, ok := <-errCh:
 			if !ok {
 				done = true
@@ -700,7 +690,7 @@ func (s *HistoryConsumer) readHourlyAggTradesParquet(path string, date time.Time
 }
 
 // writeHourlyAggTradesParquet writes aggTrades to an hourly parquet file atomically
-func (s *HistoryConsumer) writeHourlyAggTradesParquet(path string, trades []v3.AggTrade) error {
+func (s *HistoryConsumer) writeHourlyAggTradesParquet(path string, trades []*v3.AggTrade) error {
 	// Convert to absolute path
 	absPath, err := filepath.Abs(path)
 	if err != nil {
@@ -756,7 +746,7 @@ func (s *HistoryConsumer) writeHourlyAggTradesParquet(path string, trades []v3.A
 }
 
 // sortAggTradesByID sorts aggTrades by AggTradeID in ascending order
-func sortAggTradesByID(trades []v3.AggTrade) {
+func sortAggTradesByID(trades []*v3.AggTrade) {
 	for i := 0; i < len(trades)-1; i++ {
 		for j := i + 1; j < len(trades); j++ {
 			if trades[i].AggTradeID > trades[j].AggTradeID {
@@ -767,12 +757,12 @@ func sortAggTradesByID(trades []v3.AggTrade) {
 }
 
 // ReadCachedCurrentDay reads cached current day data from hourly parquet files
-func (s *HistoryConsumer) ReadCachedCurrentDay(asset *HistoryAsset) ([]v3.Kline, error) {
+func (s *HistoryConsumer) ReadCachedCurrentDay(asset *HistoryAsset) ([]*v3.Kline, error) {
 	now := time.Now().UTC()
 	midnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 	currentHour := now.Hour()
 
-	var allCandles []v3.Kline
+	var allCandles []*v3.Kline
 
 	// If it's the current day, we might need to refresh the last hour data first
 	if asset.IsToday() {
@@ -839,13 +829,13 @@ func (s *HistoryConsumer) RefreshLastHour(asset *HistoryAsset) error {
 	}
 
 	// Read existing candles and merge
-	var existingCandles []v3.Kline
+	var existingCandles []*v3.Kline
 	if fs.FileExists(parquetPath) {
 		existingCandles, _ = s.readHourlyParquet(parquetPath, midnight)
 	}
 
 	// Merge: keep existing candles that are not in new data
-	merged := make(map[int64]v3.Kline)
+	merged := make(map[int64]*v3.Kline)
 	for _, c := range existingCandles {
 		merged[c.OpenTime] = c
 	}
@@ -854,7 +844,7 @@ func (s *HistoryConsumer) RefreshLastHour(asset *HistoryAsset) error {
 	}
 
 	// Convert back to slice and sort
-	var allCandles []v3.Kline
+	var allCandles []*v3.Kline
 	for _, c := range merged {
 		allCandles = append(allCandles, c)
 	}
@@ -867,9 +857,9 @@ func (s *HistoryConsumer) RefreshLastHour(asset *HistoryAsset) error {
 }
 
 // fetchHourData fetches kline data for a specific time range
-func (s *HistoryConsumer) fetchHourData(asset *HistoryAsset, start, end time.Time) ([]v3.Kline, error) {
+func (s *HistoryConsumer) fetchHourData(asset *HistoryAsset, start, end time.Time) ([]*v3.Kline, error) {
 	// Convert to milliseconds for API
-	return s.api.Candles(&v3.CandleRequest{
+	return v3.Klines(&v3.KlineRequest{
 		Base: v3.SymbolRequest{
 			Symbol:    asset.Market,
 			StartTime: new(start.UnixMilli()),
@@ -881,10 +871,10 @@ func (s *HistoryConsumer) fetchHourData(asset *HistoryAsset, start, end time.Tim
 }
 
 // readHourlyParquet reads klines from an hourly parquet file
-func (s *HistoryConsumer) readHourlyParquet(path string, date time.Time) ([]v3.Kline, error) {
+func (s *HistoryConsumer) readHourlyParquet(path string, date time.Time) ([]*v3.Kline, error) {
 	recordCh, errCh := data.ReadParquet[v3.KlineParquet](path)
 
-	var klines []v3.Kline
+	var klines []*v3.Kline
 	for done := false; !done; {
 		select {
 		case record, ok := <-recordCh:
@@ -893,7 +883,7 @@ func (s *HistoryConsumer) readHourlyParquet(path string, date time.Time) ([]v3.K
 				continue
 			}
 			// Convert ParquetKline back to Kline
-			klines = append(klines, *record.ToKline(date))
+			klines = append(klines, record.ToKline(date))
 		case err, ok := <-errCh:
 			if !ok {
 				done = true
@@ -908,7 +898,7 @@ func (s *HistoryConsumer) readHourlyParquet(path string, date time.Time) ([]v3.K
 
 // writeHourlyParquet writes klines to an hourly parquet file atomically
 // Uses temp file + rename to prevent race conditions with readers
-func (s *HistoryConsumer) writeHourlyParquet(path string, klines []v3.Kline) error {
+func (s *HistoryConsumer) writeHourlyParquet(path string, klines []*v3.Kline) error {
 	// Convert to absolute path to avoid relative path resolution issues
 	absPath, err := filepath.Abs(path)
 	if err != nil {
@@ -966,7 +956,7 @@ func (s *HistoryConsumer) writeHourlyParquet(path string, klines []v3.Kline) err
 }
 
 // sortKlinesByOpenTime sorts klines by OpenTime in ascending order
-func sortKlinesByOpenTime(klines []v3.Kline) {
+func sortKlinesByOpenTime(klines []*v3.Kline) {
 	for i := 0; i < len(klines)-1; i++ {
 		for j := i + 1; j < len(klines); j++ {
 			if klines[i].OpenTime > klines[j].OpenTime {

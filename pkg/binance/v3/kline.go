@@ -10,16 +10,16 @@ import (
 
 //type Klines []Kline
 
-type KlinesOption func(*[]Kline) error
-
-func NewKlines(opts ...KlinesOption) (l []Kline, err error) {
-	for _, opt := range opts {
-		if err = opt(&l); err != nil {
-			return
-		}
-	}
-	return
-}
+//type KlinesOption func(*[]Kline) error
+//
+//func NewKlines(opts ...KlinesOption) (l []Kline, err error) {
+//	for _, opt := range opts {
+//		if err = opt(&l); err != nil {
+//			return
+//		}
+//	}
+//	return
+//}
 
 // Kline is a candle returned by GET /api/v3/klines.
 type Kline struct {
