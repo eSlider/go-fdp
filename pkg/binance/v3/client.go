@@ -124,6 +124,7 @@ func GetCast[T any](ctx context.Context, path string, req any) (l []*T, err erro
 			continue
 		}
 
+		// Other error
 		if decodeErr != nil {
 			return nil, fmt.Errorf("http %d: %w", resp.StatusCode, decodeErr)
 		}
