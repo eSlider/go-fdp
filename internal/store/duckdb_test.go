@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/eslider/go-binance-fdp/internal/query"
-	"github.com/eslider/go-binance-fdp/pkg/data"
+	"github.com/eslider/go-fdp/internal/query"
+	"github.com/eslider/go-fdp/pkg/data"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

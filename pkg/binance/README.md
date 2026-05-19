@@ -2,6 +2,8 @@
 
 Binance spot market data: S3 historical ETL, live hourly parquet, and REST client.
 
+Godoc: [pkg.go.dev/github.com/eslider/go-fdp/pkg/binance](https://pkg.go.dev/github.com/eslider/go-fdp/pkg/binance)
+
 ## Layout
 
 | File | Role |

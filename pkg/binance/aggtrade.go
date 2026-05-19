@@ -2,7 +2,7 @@ package binance
 
 import (
 	"errors"
-	"github.com/eslider/go-binance-fdp/pkg/data"
+	"github.com/eslider/go-fdp/pkg/data"
 	"time"
 
 	"github.com/go-viper/mapstructure/v2"

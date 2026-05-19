@@ -7,11 +7,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/eslider/go-binance-fdp/pkg/binance"
-	"github.com/eslider/go-binance-fdp/pkg/data"
-	"github.com/eslider/go-binance-fdp/pkg/etl"
-	"github.com/eslider/go-binance-fdp/pkg/gapfill/hourplan"
-	"github.com/eslider/go-binance-fdp/pkg/integrity"
+	"github.com/eslider/go-fdp/pkg/binance"
+	"github.com/eslider/go-fdp/pkg/data"
+	"github.com/eslider/go-fdp/pkg/etl"
+	"github.com/eslider/go-fdp/pkg/gapfill/hourplan"
+	"github.com/eslider/go-fdp/pkg/integrity"
 	"golang.org/x/sync/errgroup"
 )
 

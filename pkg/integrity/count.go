@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/eslider/go-binance-fdp/pkg/data"
+	"github.com/eslider/go-fdp/pkg/data"
 )
 
 // CountResult is a row-count audit for one parquet file.

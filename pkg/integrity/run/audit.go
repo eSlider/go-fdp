@@ -7,10 +7,10 @@ import (
 	"os"
 	"time"
 
-	"github.com/eslider/go-binance-fdp/pkg/binance"
-	"github.com/eslider/go-binance-fdp/pkg/data"
-	"github.com/eslider/go-binance-fdp/pkg/fs"
-	"github.com/eslider/go-binance-fdp/pkg/integrity"
+	"github.com/eslider/go-fdp/pkg/binance"
+	"github.com/eslider/go-fdp/pkg/data"
+	"github.com/eslider/go-fdp/pkg/fs"
+	"github.com/eslider/go-fdp/pkg/integrity"
 )
 
 // Options configures a kline integrity audit run.

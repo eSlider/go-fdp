@@ -1,6 +1,6 @@
 package binance
 
-import "github.com/eslider/go-binance-fdp/pkg/etl"
+import "github.com/eslider/go-fdp/pkg/etl"
 
 // JobFromAsset maps a history asset to an ETL job.
 func JobFromAsset(asset *HistoryAsset) etl.Job {

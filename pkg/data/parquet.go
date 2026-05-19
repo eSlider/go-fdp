@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/eslider/go-binance-fdp/pkg/fs"
+	"github.com/eslider/go-fdp/pkg/fs"
 	"log"
 	"os"
 	"path/filepath"

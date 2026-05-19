@@ -3,7 +3,7 @@ package etl
 import (
 	"time"
 
-	"github.com/eslider/go-binance-fdp/pkg/data"
+	"github.com/eslider/go-fdp/pkg/data"
 )
 
 // Job is the exchange-neutral ETL unit.

@@ -9,9 +9,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/eslider/go-binance-fdp/internal/query"
-	"github.com/eslider/go-binance-fdp/pkg/data"
-	"github.com/eslider/go-binance-fdp/pkg/fs"
+	"github.com/eslider/go-fdp/internal/query"
+	"github.com/eslider/go-fdp/pkg/data"
+	"github.com/eslider/go-fdp/pkg/fs"
 	"github.com/go-viper/mapstructure/v2"
 
 	_ "github.com/duckdb/duckdb-go/v2"

@@ -9,11 +9,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/eslider/go-binance-fdp/internal/market"
-	"github.com/eslider/go-binance-fdp/internal/store"
-	"github.com/eslider/go-binance-fdp/pkg/binance"
-	"github.com/eslider/go-binance-fdp/pkg/etl"
-	"github.com/eslider/go-binance-fdp/pkg/integrity"
+	"github.com/eslider/go-fdp/internal/market"
+	"github.com/eslider/go-fdp/internal/store"
+	"github.com/eslider/go-fdp/pkg/binance"
+	"github.com/eslider/go-fdp/pkg/etl"
+	"github.com/eslider/go-fdp/pkg/integrity"
 )
 
 // TestAggTradesHandler tests the /v1/aggtrades endpoint

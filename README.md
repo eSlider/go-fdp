@@ -1,13 +1,27 @@
-# go-binance-fdp
+# go-fdp
 
-[![Go Reference](https://pkg.go.dev/badge/github.com/eslider/go-binance-fdp.svg)](https://pkg.go.dev/github.com/eslider/go-binance-fdp)
+[![Go Reference](https://pkg.go.dev/badge/github.com/eslider/go-fdp.svg)](https://pkg.go.dev/github.com/eslider/go-fdp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Go](https://img.shields.io/badge/Go-1.26+-00ADD8.svg)](https://go.dev)
-[![GitHub Stars](https://img.shields.io/github/stars/eSlider/go-binance-fdp?style=social)](https://github.com/eSlider/go-binance-fdp/stargazers)
+[![GitHub Stars](https://img.shields.io/github/stars/eSlider/go-fdp?style=social)](https://github.com/eSlider/go-fdp/stargazers)
 
-Go **finance data proxy** for Binance spot market data: download historical klines and aggregate trades from [Binance public data](https://data.binance.vision/), cache them as Hive-partitioned Parquet, query with DuckDB, and serve a gzip-compressed REST API. No API keys required for historical S3 data.
+Go **finance data proxy** for multi-exchange market data. **Binance** is the primary source today: download historical klines and aggregate trades from [Binance public data](https://data.binance.vision/), cache them as Hive-partitioned Parquet, query with DuckDB, and serve a gzip-compressed REST API. Additional sources (Bitfinex, Polymarket, …) plug in via `pkg/etl`. No API keys required for Binance historical S3 data.
 
 Pairs with [go-trade](https://github.com/eSlider/go-trade) for a unified cross-exchange market data model.
+
+## API documentation
+
+Package reference (godoc): **[pkg.go.dev/github.com/eslider/go-fdp](https://pkg.go.dev/github.com/eslider/go-fdp)**
+
+| Package | Description |
+| --- | --- |
+| [pkg/binance](https://pkg.go.dev/github.com/eslider/go-fdp/pkg/binance) | Binance S3 ETL, live hourly Parquet, REST client |
+| [pkg/etl](https://pkg.go.dev/github.com/eslider/go-fdp/pkg/etl) | Multi-source bulk/live router |
+| [pkg/data](https://pkg.go.dev/github.com/eslider/go-fdp/pkg/data) | Parquet, CSV, shared types |
+| [pkg/gapfill](https://pkg.go.dev/github.com/eslider/go-fdp/pkg/gapfill) | Lazy gap repair on read |
+| [pkg/integrity](https://pkg.go.dev/github.com/eslider/go-fdp/pkg/integrity) | Parquet audits and policies |
+
+The former module path `github.com/eslider/go-binance-fdp` redirects here after the rename.
 
 ## Architecture
 
@@ -18,7 +32,7 @@ graph TB
         API["Binance REST<br/>api.binance.com"]
     end
 
-    subgraph "go-binance-fdp"
+    subgraph "go-fdp"
         ETL["pkg/binance<br/>S3 bulk + live hours"]
         APIpkg["pkg/binance<br/>REST klines · aggTrades"]
         MKT["internal/market.API<br/>lazy gap repair"]
@@ -50,7 +64,7 @@ graph LR
         ADH["Ad-hoc scripts<br/>per symbol / day"]
     end
 
-    subgraph "With go-binance-fdp"
+    subgraph "With go-fdp"
         REQ["GET /v1/data<br/>from · to · market"]
         AUTO["Auto ETL + cache"]
         OUT["JSON candles<br/>or aggTrades"]
@@ -89,14 +103,14 @@ graph LR
 ## Installation
 
 ```bash
-go get github.com/eslider/go-binance-fdp
+go get github.com/eslider/go-fdp
 ```
 
 Clone and run the server:
 
 ```bash
-git clone https://github.com/eSlider/go-binance-fdp.git
-cd go-binance-fdp
+git clone https://github.com/eSlider/go-fdp.git
+cd go-fdp
 go mod download
 go run -tags no_duckdb_arrow ./cmd/fdp
 ```
@@ -232,8 +246,8 @@ import (
     "context"
     "time"
 
-    "github.com/eslider/go-binance-fdp/pkg/binance"
-    "github.com/eslider/go-binance-fdp/pkg/data"
+    "github.com/eslider/go-fdp/pkg/binance"
+    "github.com/eslider/go-fdp/pkg/data"
 )
 
 func main() {
@@ -266,7 +280,7 @@ import (
     "context"
     "time"
 
-    "github.com/eslider/go-binance-fdp/pkg/binance"
+    "github.com/eslider/go-fdp/pkg/binance"
 )
 
 func main() {

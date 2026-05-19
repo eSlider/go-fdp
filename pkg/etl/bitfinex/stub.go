@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/eslider/go-binance-fdp/pkg/etl"
-	"github.com/eslider/go-binance-fdp/pkg/gapfill/hourplan"
-	"github.com/eslider/go-binance-fdp/pkg/integrity"
+	"github.com/eslider/go-fdp/pkg/etl"
+	"github.com/eslider/go-fdp/pkg/gapfill/hourplan"
+	"github.com/eslider/go-fdp/pkg/integrity"
 )
 
 // Stub is a placeholder until Bitfinex ETL is implemented.

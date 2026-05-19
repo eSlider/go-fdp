@@ -10,14 +10,14 @@ import (
 	"os"
 	"strings"
 
-	"github.com/eslider/go-binance-fdp/internal/handler"
-	"github.com/eslider/go-binance-fdp/internal/market"
-	"github.com/eslider/go-binance-fdp/internal/store"
-	"github.com/eslider/go-binance-fdp/pkg/binance"
-	"github.com/eslider/go-binance-fdp/pkg/etl"
-	"github.com/eslider/go-binance-fdp/pkg/etl/bitfinex"
-	"github.com/eslider/go-binance-fdp/pkg/etl/polymarket"
-	"github.com/eslider/go-binance-fdp/pkg/integrity"
+	"github.com/eslider/go-fdp/internal/handler"
+	"github.com/eslider/go-fdp/internal/market"
+	"github.com/eslider/go-fdp/internal/store"
+	"github.com/eslider/go-fdp/pkg/binance"
+	"github.com/eslider/go-fdp/pkg/etl"
+	"github.com/eslider/go-fdp/pkg/etl/bitfinex"
+	"github.com/eslider/go-fdp/pkg/etl/polymarket"
+	"github.com/eslider/go-fdp/pkg/integrity"
 	"github.com/gorilla/mux"
 )
 

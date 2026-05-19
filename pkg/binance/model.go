@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/eslider/go-binance-fdp/pkg/data"
+	"github.com/eslider/go-fdp/pkg/data"
 )
 
 // Event - event to store daily informations

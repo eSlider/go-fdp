@@ -1,6 +1,6 @@
 package market
 
-import "github.com/eslider/go-binance-fdp/internal/query"
+import "github.com/eslider/go-fdp/internal/query"
 
 type MarketType = query.MarketType
 type Indicator = query.Indicator

@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/eslider/go-binance-fdp/internal/query"
-	"github.com/eslider/go-binance-fdp/pkg/binance"
+	"github.com/eslider/go-fdp/internal/query"
+	"github.com/eslider/go-fdp/pkg/binance"
 )
 
 // TestAggTradesFromHourlyParquet tests reading aggTrades from hourly parquet files

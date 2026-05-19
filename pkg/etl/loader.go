@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/eslider/go-binance-fdp/pkg/gapfill/hourplan"
-	"github.com/eslider/go-binance-fdp/pkg/integrity"
+	"github.com/eslider/go-fdp/pkg/gapfill/hourplan"
+	"github.com/eslider/go-fdp/pkg/integrity"
 )
 
 // BulkLoader downloads historical archive data into parquet.

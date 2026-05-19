@@ -4,9 +4,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/eslider/go-binance-fdp/pkg/etl"
-	"github.com/eslider/go-binance-fdp/pkg/gapfill/hourplan"
-	"github.com/eslider/go-binance-fdp/pkg/integrity"
+	"github.com/eslider/go-fdp/pkg/etl"
+	"github.com/eslider/go-fdp/pkg/gapfill/hourplan"
+	"github.com/eslider/go-fdp/pkg/integrity"
 )
 
 // Source implements etl.BulkLoader and etl.LiveSeries for Binance.

@@ -6,9 +6,9 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/eslider/go-binance-fdp/pkg/data"
-	"github.com/eslider/go-binance-fdp/pkg/fs"
-	"github.com/eslider/go-binance-fdp/pkg/integrity"
+	"github.com/eslider/go-fdp/pkg/data"
+	"github.com/eslider/go-fdp/pkg/fs"
+	"github.com/eslider/go-fdp/pkg/integrity"
 )
 
 func (s *HistoryConsumer) midnightUTC(now time.Time) time.Time {

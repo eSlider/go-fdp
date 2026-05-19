@@ -4,6 +4,14 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Package `doc.go` files and README links for [pkg.go.dev](https://pkg.go.dev/github.com/eslider/go-fdp)
+
+### Changed
+
+- Renamed module and GitHub repository from `go-binance-fdp` to `go-fdp` (`github.com/eslider/go-fdp`) to reflect multi-source ETL
+
 ## [0.2.0] - 2026-05-19
 
 ### Added

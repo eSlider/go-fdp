@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/eslider/go-binance-fdp/pkg/data"
-	"github.com/eslider/go-binance-fdp/pkg/fs"
+	"github.com/eslider/go-fdp/pkg/data"
+	"github.com/eslider/go-fdp/pkg/fs"
 )
 
 // AuditConfig configures a parquet time-series audit.

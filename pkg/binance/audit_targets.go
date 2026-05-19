@@ -3,9 +3,9 @@ package binance
 import (
 	"time"
 
-	"github.com/eslider/go-binance-fdp/pkg/data"
-	"github.com/eslider/go-binance-fdp/pkg/fs"
-	"github.com/eslider/go-binance-fdp/pkg/integrity"
+	"github.com/eslider/go-fdp/pkg/data"
+	"github.com/eslider/go-fdp/pkg/fs"
+	"github.com/eslider/go-fdp/pkg/integrity"
 )
 
 // BuildHourlyTargets builds audit targets for UTC hours [fromHour, toHour] on day.

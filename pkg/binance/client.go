@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/eslider/go-binance-fdp/pkg/data"
+	"github.com/eslider/go-fdp/pkg/data"
 
 	"github.com/goccy/go-json"
 )

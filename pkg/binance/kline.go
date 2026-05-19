@@ -7,7 +7,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/eslider/go-binance-fdp/pkg/data"
+	"github.com/eslider/go-fdp/pkg/data"
 	"github.com/go-viper/mapstructure/v2"
 )
 

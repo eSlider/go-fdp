@@ -3,8 +3,8 @@ package query
 import (
 	"time"
 
-	"github.com/eslider/go-binance-fdp/pkg/data"
-	"github.com/eslider/go-binance-fdp/pkg/etl"
+	"github.com/eslider/go-fdp/pkg/data"
+	"github.com/eslider/go-fdp/pkg/etl"
 )
 
 type MarketType string

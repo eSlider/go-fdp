@@ -7,10 +7,10 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/eslider/go-binance-fdp/internal/store"
-	"github.com/eslider/go-binance-fdp/pkg/binance"
-	"github.com/eslider/go-binance-fdp/pkg/etl"
-	"github.com/eslider/go-binance-fdp/pkg/gapfill"
+	"github.com/eslider/go-fdp/internal/store"
+	"github.com/eslider/go-fdp/pkg/binance"
+	"github.com/eslider/go-fdp/pkg/etl"
+	"github.com/eslider/go-fdp/pkg/gapfill"
 	"golang.org/x/sync/errgroup"
 )
 

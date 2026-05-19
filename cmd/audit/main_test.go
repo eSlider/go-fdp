@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/eslider/go-binance-fdp/pkg/data"
-	"github.com/eslider/go-binance-fdp/pkg/integrity"
-	"github.com/eslider/go-binance-fdp/pkg/integrity/run"
+	"github.com/eslider/go-fdp/pkg/data"
+	"github.com/eslider/go-fdp/pkg/integrity"
+	"github.com/eslider/go-fdp/pkg/integrity/run"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
