@@ -1,6 +1,7 @@
 package binance
 
 import (
+	"embed"
 	"fmt"
 	"os"
 	"strings"
@@ -9,6 +10,9 @@ import (
 
 	"github.com/jszwec/csvutil"
 )
+
+//go:embed testdata/cryptos.csv testdata/markets.txt
+var defaultRegistry embed.FS
 
 // JSON keys in symbols.json: symbol, type, description.
 //
@@ -42,7 +46,7 @@ func NewExchangeRegistry() (*ExchangeRegistry, error) {
 
 	var symbols []*Symbol
 
-	cryptoCSV, err := os.ReadFile(fs.GetModuleRelativePath("data/cryptos.csv"))
+	cryptoCSV, err := readRegistryFile("cryptos.csv")
 	if err != nil {
 		return nil, fmt.Errorf("failed to read cryptos.csv: %w", err)
 	}
@@ -51,7 +55,7 @@ func NewExchangeRegistry() (*ExchangeRegistry, error) {
 		return nil, err
 	}
 
-	marketsTXT, err := os.ReadFile(fs.GetModuleRelativePath("data/markets.txt"))
+	marketsTXT, err := readRegistryFile("markets.txt")
 	if err != nil {
 		return nil, fmt.Errorf("failed to read markets.txt: %w", err)
 	}
@@ -84,4 +88,18 @@ func NewExchangeRegistry() (*ExchangeRegistry, error) {
 		Markets: markets,
 	}
 	return reg, nil
+}
+
+// readRegistryFile loads cryptos.csv or markets.txt from data/ when present,
+// otherwise from embedded testdata (CI and default deployments).
+func readRegistryFile(name string) ([]byte, error) {
+	path := fs.GetModuleRelativePath("data/" + name)
+	b, err := os.ReadFile(path)
+	if err == nil {
+		return b, nil
+	}
+	if !os.IsNotExist(err) {
+		return nil, err
+	}
+	return defaultRegistry.ReadFile("testdata/" + name)
 }
