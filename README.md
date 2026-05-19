@@ -19,11 +19,11 @@ graph TB
     end
 
     subgraph "go-binance-fdp"
-        ETL["HistoryConsumer<br/>ZIP → CSV → Parquet"]
-        V3["pkg/binance/v3<br/>Klines · AggTrades"]
-        SVC["MarketService<br/>ETL on demand"]
-        REPO["DuckDBRepository<br/>SQL over Parquet"]
-        HTTP["REST /v1/*<br/>gzip middleware"]
+        ETL["pkg/binance<br/>S3 bulk + live hours"]
+        APIpkg["pkg/binance<br/>REST klines · aggTrades"]
+        MKT["internal/market.API<br/>lazy gap repair"]
+        STORE["internal/store<br/>DuckDB over Parquet"]
+        HTTP["internal/handler<br/>REST /v1/* gzip"]
     end
 
     subgraph "Storage"
@@ -31,14 +31,13 @@ graph TB
     end
 
     S3 -->|"anonymous S3"| ETL
-    API --> V3
+    APIpkg -->|"today's candles"| PQ
     ETL --> PQ
-    V3 -->|"today's candles"| PQ
-    SVC --> ETL
-    SVC --> V3
-    SVC --> REPO
-    REPO --> PQ
-    HTTP --> SVC
+    HTTP --> MKT
+    MKT --> ETL
+    MKT --> APIpkg
+    MKT --> STORE
+    STORE --> PQ
 ```
 
 ## The Problem: Raw Files vs. Queryable History
@@ -76,7 +75,8 @@ graph LR
 | **Aggregate trades** | Spot aggTrades with hourly Parquet for recent data |
 | **ETL on demand** | Downloads and transforms only missing partitions |
 | **DuckDB cache** | Fast range queries over local Parquet |
-| **Live gap fill** | Current-day klines via Binance REST (`pkg/binance/v3`) |
+| **Lazy gap repair** | Count-first audit + repair on API read (`pkg/gapfill`, `pkg/integrity`) |
+| **Live gap fill** | Current-day klines via Binance REST (`pkg/binance`) |
 | **REST API** | Gzip-enabled JSON endpoints |
 | **Observability** | Optional Grafana + Loki + Promtail via Docker Compose |
 
@@ -98,7 +98,7 @@ Clone and run the server:
 git clone https://github.com/eSlider/go-binance-fdp.git
 cd go-binance-fdp
 go mod download
-go run -tags no_duckdb_arrow main.go
+go run -tags no_duckdb_arrow ./cmd/fdp
 ```
 
 Default listen port: **8082**.
@@ -148,7 +148,7 @@ curl 'http://localhost:8082/v1/symbols'
 sequenceDiagram
     participant Client
     participant API as REST API
-    participant Svc as MarketService
+    participant Svc as market.API
     participant ETL as HistoryConsumer
     participant S3 as Binance Vision
     participant DB as DuckDB
@@ -171,16 +171,20 @@ sequenceDiagram
 ## Project Structure
 
 ```
-├── main.go                 # HTTP server entry point
+├── cmd/
+│   ├── fdp/                # HTTP server (finance data proxy)
+│   └── audit/              # Parquet integrity CLI
 ├── internal/
-│   ├── domain/             # Candle, Trade, request types
 │   ├── handler/            # REST handlers (/v1/*)
-│   ├── repository/         # DuckDB over Parquet
-│   └── service/            # ETL orchestration
+│   ├── market/             # Use cases: Candles, AggTrades, lazy repair
+│   ├── query/              # Shared read types (store + market)
+│   └── store/              # DuckDB reads over Parquet
 ├── pkg/
-│   ├── binance/            # S3 history consumer, models
-│   │   └── v3/             # Binance REST client (klines, aggTrades)
-│   ├── data/               # Parquet, CSV, time utilities
+│   ├── binance/            # S3 ETL, REST client, live hourly seal
+│   ├── etl/                # Router, BulkLoader, LiveSeries
+│   ├── gapfill/            # Lazy Repairer + hourplan
+│   ├── integrity/          # Parquet audit + policy
+│   ├── data/               # Parquet, CSV, drain helpers
 │   └── fs/                 # File helpers
 ├── docker/                 # Grafana, Loki, Promtail configs
 ├── compose.yml
@@ -255,23 +259,26 @@ func main() {
 }
 ```
 
-### Binance REST v3 client
+### Binance REST client
 
 ```go
 import (
     "context"
     "time"
 
-    "github.com/eslider/go-binance-fdp/pkg/binance/v3"
+    "github.com/eslider/go-binance-fdp/pkg/binance"
 )
 
 func main() {
     ctx := context.Background()
-    klines, err := v3.Klines(ctx, v3.KlinesRequest{
-        Symbol:    "BTCUSDT",
-        Interval:  "1m",
-        StartTime: time.Now().Add(-time.Hour).UnixMilli(),
-        Limit:     60,
+    start := time.Now().Add(-time.Hour).UnixMilli()
+    klines, err := binance.FetchKlines(ctx, &binance.KlineRequest{
+        Base: binance.SymbolRequest{
+            Symbol:    "BTCUSDT",
+            StartTime: &start,
+        },
+        Interval: "1m",
+        Limit:    60,
     })
     if err != nil {
         panic(err)
@@ -285,9 +292,13 @@ func main() {
 ```bash
 go mod tidy
 go fmt ./...
+go test -short -tags no_duckdb_arrow ./...
 go test -tags no_duckdb_arrow ./...
-go run -tags no_duckdb_arrow main.go -port 8082
+go run -tags no_duckdb_arrow ./cmd/fdp -port 8082
+go run -tags no_duckdb_arrow ./cmd/audit -today -market BTCUSDT
 ```
+
+Tests use real parquet fixtures and optional live Binance calls — no generated mocks. Use `-short` to skip network-heavy cases in CI.
 
 ## Environment
 

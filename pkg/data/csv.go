@@ -8,9 +8,25 @@ import (
 	"io"
 )
 
-// ReadHeaderlessCSV reads headerless CSV (like Binance data) and sends records to channel
-// Maps CSV columns positionally to struct fields based on csv tag numbers
-func ReadHeaderlessCSV[T any](reader *Buffer) (ch chan struct {
+// ReadHeaderlessCSV reads headerless CSV (like Binance data) and sends records to channel.
+func ReadHeaderlessCSV[T any](reader io.Reader) (ch chan struct {
+	Value *T
+	Error error
+}) {
+	if b, ok := reader.(*Buffer); ok {
+		return readHeaderlessCSVFromBytes[T](b.Bytes())
+	}
+	return readHeaderlessCSVFromReader[T](reader)
+}
+
+func readHeaderlessCSVFromBytes[T any](bts []byte) (ch chan struct {
+	Value *T
+	Error error
+}) {
+	return readHeaderlessCSVFromReader[T](bytes.NewReader(bts))
+}
+
+func readHeaderlessCSVFromReader[T any](reader io.Reader) (ch chan struct {
 	Value *T
 	Error error
 }) {
@@ -22,11 +38,7 @@ func ReadHeaderlessCSV[T any](reader *Buffer) (ch chan struct {
 	go func() {
 		defer close(ch)
 
-		// Copy bytes to buffer
-		bts := reader.Bytes()[:]
-		buf := bytes.NewReader(bts)
-		// bufReader := bufio.NewReader(buf)
-		for from := csv.NewReader(buf); true; {
+		for from := csv.NewReader(reader); true; {
 
 			record, err := from.Read()
 			data := struct {

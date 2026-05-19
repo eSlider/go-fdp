@@ -1,39 +1,32 @@
-# Current candle
+# pkg/binance
 
-The issue of binance candles is, that there is no current candle available for download from S3 storage as a ZIP file.
+Binance spot market data: S3 historical ETL, live hourly parquet, and REST client.
 
-There is not this day data at all.
+## Layout
 
-To fulfill this requirement, we need to use API and store candles into  duckdb using `access_mode=READ_WRITE` to 
-let read and write access in parallel.
+| File | Role |
+| --- | --- |
+| `bulk.go` | S3 list/download, ZIP → CSV → daily parquet |
+| `live.go` | Today hourly klines and aggTrades seal/refresh |
+| `client.go` | REST (`FetchKlines`, `FetchAggTrades`, …) |
+| `source.go` | `etl.BulkLoader` + `etl.LiveSeries` adapter |
+| `kline_hourly.go` | Per-hour seal/load/audit helpers |
+| `repair.go` | Issue-driven gap repair (delegates to `pkg/integrity`) |
 
-## Duckdb storage
+## ETL source
 
-```sql
-
--- Crate candles table
-create
-or replace table candles
-(
-    -- unique identifier
-    openTime timestamp primary key,
-    --closeTime TIMESTAMP GENERATED ALWAYS AS (openTime + INTERVAL '1 minute' + INTERVAL '-1 microsecond') ,
-
-    open double NOT NULL,
-    high double NOT NULL,
-    low double NOT NULL,
-    close double NOT NULL,
-
-    volume double NOT NULL
-);
+```go
+consumer, _ := binance.NewHistoryConsumer(ctx)
+src := binance.NewSource(consumer)
+// Register with etl.NewRouter as BulkLoader and LiveSeries for etl.SourceBinance
 ```
 
-### Insert data
+## REST
 
-```sql
--- Insert data into duckdb table
-INSERT INTO candles (openTime, open, high, low, close, volume)
-VALUES
-    ('2025-11-18 14:35:00', 67234.5, 67280.0, 67190.0, 67210.3, 145.678);
-
+```go
+klines, err := binance.FetchKlines(ctx, &binance.KlineRequest{ /* … */ })
 ```
+
+## Current day
+
+Historical ZIPs exclude today. Live paths write under `data/.../current/*.parquet`; `hourplan.PlanHours` drives seal vs refresh for the open hour.

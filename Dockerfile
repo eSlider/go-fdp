@@ -33,7 +33,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     -tags="no_duckdb_arrow" \
     -trimpath \
     -o /app/bin/server \
-    ./main.go
+    ./cmd/fdp
 
 # Runtime stage
 FROM debian:bookworm-slim

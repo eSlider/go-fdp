@@ -3,9 +3,9 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
-	"github.com/eslider/go-binance-fdp/internal/domain"
-	"github.com/eslider/go-binance-fdp/internal/service"
+	"github.com/eslider/go-binance-fdp/internal/market"
 	"github.com/eslider/go-binance-fdp/pkg/data"
+	"github.com/eslider/go-binance-fdp/pkg/etl"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/go-viper/mapstructure/v2"
@@ -13,13 +13,13 @@ import (
 )
 
 type MarketHandler struct {
-	service  *service.MarketService
+	api      *market.API
 	validate *validator.Validate
 }
 
-func NewMarketHandler(service *service.MarketService) *MarketHandler {
+func NewMarketHandler(api *market.API) *MarketHandler {
 	return &MarketHandler{
-		service:  service,
+		api:      api,
 		validate: validator.New(),
 	}
 }
@@ -72,17 +72,18 @@ func (h *MarketHandler) GetMarketHistory(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	req := domain.MarketDataRequest{
+	q := market.Query{
 		From:       *data.AnyTimestampToTime(dto.From),
 		To:         *data.AnyTimestampToTime(dto.To),
 		Market:     dto.Market,
 		Exchange:   dto.Exchange,
-		MarketType: domain.NewMarketType(dto.MarketType),
+		Source:     etl.Source(dto.Exchange),
+		MarketType: market.NewMarketType(dto.MarketType),
 		Frame:      data.NewFrame(dto.Frame),
-		Indicator:  domain.Indicator(dto.Indicator),
+		Indicator:  market.Indicator(dto.Indicator),
 	}
 
-	candles, err := h.service.GetMarketHistory(r.Context(), req)
+	candles, err := h.api.Candles(r.Context(), q)
 	if err != nil {
 		h.writeError(w, err, http.StatusInternalServerError)
 		return
@@ -103,17 +104,18 @@ func (h *MarketHandler) GetAggTrades(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	req := domain.MarketDataRequest{
+	q := market.Query{
 		From:       *data.AnyTimestampToTime(dto.From),
 		To:         *data.AnyTimestampToTime(dto.To),
 		Market:     dto.Market,
 		Exchange:   dto.Exchange,
-		MarketType: domain.NewMarketType(dto.MarketType),
-		Frame:      data.NoFrame, // AggTrades don't have frames
-		Indicator:  domain.AggTrades,
+		Source:     etl.Source(dto.Exchange),
+		MarketType: market.NewMarketType(dto.MarketType),
+		Frame:      data.NoFrame,
+		Indicator:  market.AggTrades,
 	}
 
-	aggTrades, err := h.service.GetAggTrades(r.Context(), req)
+	aggTrades, err := h.api.AggTrades(r.Context(), q)
 	if err != nil {
 		h.writeError(w, err, http.StatusInternalServerError)
 		return
@@ -123,7 +125,7 @@ func (h *MarketHandler) GetAggTrades(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *MarketHandler) GetMarkets(w http.ResponseWriter, r *http.Request) {
-	markets, err := h.service.GetMarkets(r.Context())
+	markets, err := h.api.Markets(r.Context())
 	if err != nil {
 		h.writeError(w, err, http.StatusInternalServerError)
 		return
@@ -136,7 +138,7 @@ func (h *MarketHandler) GetMarkets(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *MarketHandler) GetSymbols(w http.ResponseWriter, r *http.Request) {
-	symbols, err := h.service.GetSymbols(r.Context())
+	symbols, err := h.api.Symbols(r.Context())
 	if err != nil {
 		h.writeError(w, err, http.StatusInternalServerError)
 		return

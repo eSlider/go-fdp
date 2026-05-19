@@ -4,10 +4,30 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-05-19
+
 ### Added
 
 - REST API for klines, aggregate trades, symbols, and markets
 - ETL pipeline from [Binance public data](https://data.binance.vision/) (anonymous S3)
 - DuckDB queries over Hive-partitioned Parquet cache
-- Live Binance REST client (`pkg/binance/v3`) for current-day candles and aggTrades
+- `pkg/etl` router with multi-source stubs (`bitfinex`, `polymarket`)
+- `pkg/gapfill` lazy gap repair on API read (count-first audit via `pkg/integrity`)
+- `pkg/integrity/run` shared audit runner for `cmd/audit`
+- `cmd/fdp` HTTP entrypoint; `cmd/audit` integrity CLI
+
+### Changed
+
+- Merged `pkg/binance/v3` into `pkg/binance` (REST client, `FetchKlines`, `KlineSeries`)
+- Dissolved `internal/domain`, `internal/service`, `internal/repository` into `internal/market`, `internal/store`, `internal/query`
+- Docker and CI build `./cmd/fdp` instead of root `main.go`
+- Split `HistoryConsumer` into `bulk.go` and `live.go`
+
+### Removed
+
+- Root `main.go` (use `go run ./cmd/fdp`)
+- `pkg/binance/v3` subpackage
+
+### Added (earlier)
+
 - Docker Compose stack with Grafana, Loki, and Promtail

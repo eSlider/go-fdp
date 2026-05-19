@@ -3,15 +3,15 @@ package binance
 import (
 	"fmt"
 	"strings"
-	v3 "github.com/eslider/go-binance-fdp/pkg/binance/v3"
-	"github.com/eslider/go-binance-fdp/pkg/data"
 	"time"
+
+	"github.com/eslider/go-binance-fdp/pkg/data"
 )
 
 // Event - event to store daily informations
 type Event struct {
 	Date   time.Time
-	Klines []v3.KlineParquet
+	Klines []KlineParquet
 	Info   string
 }
 
@@ -108,16 +108,10 @@ func (m MarketType) String() string {
 }
 
 func NewMarketType(s string) MarketType {
-	switch s {
-	case "futures":
-		return Futures
-	case "option":
-		return Option
-	case "spot":
-		return Spot
-	default:
+	if s == "" {
 		return Spot
 	}
+	return MarketType(s)
 }
 
 type Indicator string

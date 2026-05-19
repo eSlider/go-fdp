@@ -9,31 +9,6 @@
   "links": [],
   "panels": [
     {
-      "datasource": {
-        "type": "datasource",
-        "uid": "-- Grafana --"
-      },
-      "gridPos": {
-        "h": 2,
-        "w": 4,
-        "x": 20,
-        "y": 0
-      },
-      "id": 999,
-      "options": {
-        "code": {
-          "language": "plaintext",
-          "showLineNumbers": false,
-          "showMiniMap": false
-        },
-        "content": "<div id=\"clock\" style=\"font-size: 20px; text-align: center; font-weight: bold;\">Loading...</div>\n\n<script>\n  function updateClock() {\n    const now = new Date();\n    const timeString = now.toLocaleTimeString();\n    const clockElement = document.getElementById('clock');\n    if (clockElement) {\n      clockElement.innerText = timeString;\n    }\n  }\n\n  setInterval(updateClock, 1000);\n  updateClock();\n</script>",
-        "mode": "html"
-      },
-      "pluginVersion": "11.0.0",
-      "title": "Current Time",
-      "type": "text"
-    },
-    {
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -214,11 +189,31 @@
       "targets": [
         {
           "columns": [
-            {"selector": "openTime", "text": "openTime", "type": "time"},
-            {"selector": "close", "text": "Price", "type": "number"},
-            {"selector": "high", "text": "High", "type": "number"},
-            {"selector": "low", "text": "Low", "type": "number"},
-            {"selector": "volume", "text": "Volume", "type": "number"}
+            {
+              "selector": "openTime",
+              "text": "openTime",
+              "type": "time"
+            },
+            {
+              "selector": "close",
+              "text": "Price",
+              "type": "number"
+            },
+            {
+              "selector": "high",
+              "text": "High",
+              "type": "number"
+            },
+            {
+              "selector": "low",
+              "text": "Low",
+              "type": "number"
+            },
+            {
+              "selector": "volume",
+              "text": "Volume",
+              "type": "number"
+            }
           ],
           "datasource": {
             "type": "yesoreyeram-infinity-datasource",
@@ -296,7 +291,7 @@
           "calcs": [
             "lastNotNull"
           ],
-          "fields": "",
+          "fields": "/^close$/",
           "values": false
         },
         "showPercentChange": true,
@@ -306,8 +301,16 @@
       "targets": [
         {
           "columns": [
-            {"selector": "openTime", "text": "openTime", "type": "timestamp_epoch_ms"},
-            {"selector": "close", "text": "close", "type": "number"}
+            {
+              "selector": "openTime",
+              "text": "openTime",
+              "type": "timestamp_epoch_ms"
+            },
+            {
+              "selector": "close",
+              "text": "close",
+              "type": "number"
+            }
           ],
           "datasource": {
             "type": "yesoreyeram-infinity-datasource",
@@ -328,7 +331,7 @@
           }
         }
       ],
-      "title": "BTCUSDT Current",
+      "title": "BTCUSDT Latest",
       "transformations": [
         {
           "id": "convertFieldType",
@@ -526,11 +529,31 @@
       "targets": [
         {
           "columns": [
-            {"selector": "openTime", "text": "openTime", "type": "time"},
-            {"selector": "close", "text": "Price", "type": "number"},
-            {"selector": "high", "text": "High", "type": "number"},
-            {"selector": "low", "text": "Low", "type": "number"},
-            {"selector": "volume", "text": "Volume", "type": "number"}
+            {
+              "selector": "openTime",
+              "text": "openTime",
+              "type": "time"
+            },
+            {
+              "selector": "close",
+              "text": "Price",
+              "type": "number"
+            },
+            {
+              "selector": "high",
+              "text": "High",
+              "type": "number"
+            },
+            {
+              "selector": "low",
+              "text": "Low",
+              "type": "number"
+            },
+            {
+              "selector": "volume",
+              "text": "Volume",
+              "type": "number"
+            }
           ],
           "datasource": {
             "type": "yesoreyeram-infinity-datasource",
@@ -608,7 +631,7 @@
           "calcs": [
             "lastNotNull"
           ],
-          "fields": "",
+          "fields": "/^close$/",
           "values": false
         },
         "showPercentChange": true,
@@ -618,8 +641,16 @@
       "targets": [
         {
           "columns": [
-            {"selector": "openTime", "text": "openTime", "type": "timestamp_epoch_ms"},
-            {"selector": "close", "text": "close", "type": "number"}
+            {
+              "selector": "openTime",
+              "text": "openTime",
+              "type": "timestamp_epoch_ms"
+            },
+            {
+              "selector": "close",
+              "text": "close",
+              "type": "number"
+            }
           ],
           "datasource": {
             "type": "yesoreyeram-infinity-datasource",
@@ -640,7 +671,7 @@
           }
         }
       ],
-      "title": "ETHUSDT Current",
+      "title": "ETHUSDT Latest",
       "transformations": [
         {
           "id": "convertFieldType",
@@ -838,11 +869,31 @@
       "targets": [
         {
           "columns": [
-            {"selector": "openTime", "text": "openTime", "type": "time"},
-            {"selector": "close", "text": "Price", "type": "number"},
-            {"selector": "high", "text": "High", "type": "number"},
-            {"selector": "low", "text": "Low", "type": "number"},
-            {"selector": "volume", "text": "Volume", "type": "number"}
+            {
+              "selector": "openTime",
+              "text": "openTime",
+              "type": "time"
+            },
+            {
+              "selector": "close",
+              "text": "Price",
+              "type": "number"
+            },
+            {
+              "selector": "high",
+              "text": "High",
+              "type": "number"
+            },
+            {
+              "selector": "low",
+              "text": "Low",
+              "type": "number"
+            },
+            {
+              "selector": "volume",
+              "text": "Volume",
+              "type": "number"
+            }
           ],
           "datasource": {
             "type": "yesoreyeram-infinity-datasource",
@@ -920,7 +971,7 @@
           "calcs": [
             "lastNotNull"
           ],
-          "fields": "",
+          "fields": "/^close$/",
           "values": false
         },
         "showPercentChange": true,
@@ -930,8 +981,16 @@
       "targets": [
         {
           "columns": [
-            {"selector": "openTime", "text": "openTime", "type": "timestamp_epoch_ms"},
-            {"selector": "close", "text": "close", "type": "number"}
+            {
+              "selector": "openTime",
+              "text": "openTime",
+              "type": "timestamp_epoch_ms"
+            },
+            {
+              "selector": "close",
+              "text": "close",
+              "type": "number"
+            }
           ],
           "datasource": {
             "type": "yesoreyeram-infinity-datasource",
@@ -952,7 +1011,7 @@
           }
         }
       ],
-      "title": "DASHUSDT Current",
+      "title": "DASHUSDT Latest",
       "transformations": [
         {
           "id": "convertFieldType",
@@ -1150,11 +1209,31 @@
       "targets": [
         {
           "columns": [
-            {"selector": "openTime", "text": "openTime", "type": "time"},
-            {"selector": "close", "text": "Price", "type": "number"},
-            {"selector": "high", "text": "High", "type": "number"},
-            {"selector": "low", "text": "Low", "type": "number"},
-            {"selector": "volume", "text": "Volume", "type": "number"}
+            {
+              "selector": "openTime",
+              "text": "openTime",
+              "type": "time"
+            },
+            {
+              "selector": "close",
+              "text": "Price",
+              "type": "number"
+            },
+            {
+              "selector": "high",
+              "text": "High",
+              "type": "number"
+            },
+            {
+              "selector": "low",
+              "text": "Low",
+              "type": "number"
+            },
+            {
+              "selector": "volume",
+              "text": "Volume",
+              "type": "number"
+            }
           ],
           "datasource": {
             "type": "yesoreyeram-infinity-datasource",
@@ -1232,7 +1311,7 @@
           "calcs": [
             "lastNotNull"
           ],
-          "fields": "",
+          "fields": "/^close$/",
           "values": false
         },
         "showPercentChange": true,
@@ -1242,8 +1321,16 @@
       "targets": [
         {
           "columns": [
-            {"selector": "openTime", "text": "openTime", "type": "timestamp_epoch_ms"},
-            {"selector": "close", "text": "close", "type": "number"}
+            {
+              "selector": "openTime",
+              "text": "openTime",
+              "type": "timestamp_epoch_ms"
+            },
+            {
+              "selector": "close",
+              "text": "close",
+              "type": "number"
+            }
           ],
           "datasource": {
             "type": "yesoreyeram-infinity-datasource",
@@ -1264,7 +1351,7 @@
           }
         }
       ],
-      "title": "ZECUSDT Current",
+      "title": "ZECUSDT Latest",
       "transformations": [
         {
           "id": "convertFieldType",

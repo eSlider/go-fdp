@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/eslider/go-binance-fdp/pkg/binance"
-	"github.com/eslider/go-binance-fdp/pkg/binance/v3"
 	"github.com/eslider/go-binance-fdp/pkg/data"
 	"github.com/eslider/go-binance-fdp/pkg/fs"
 )
@@ -86,8 +85,8 @@ func TestMainProgramParquetCreation(t *testing.T) {
 		// Read the parquet file and count entries
 
 		end = false
-		var records []*v3.KlineParquet
-		for recordCh, readErrCh := data.ReadParquet[v3.KlineParquet](parquetPath); !end; {
+		var records []*binance.KlineParquet
+		for recordCh, readErrCh := data.ReadParquet[binance.KlineParquet](parquetPath); !end; {
 			select {
 			case record, ok := <-recordCh:
 				if ok {
@@ -214,8 +213,8 @@ func TestMainProgramParquetCreation(t *testing.T) {
 
 		// Read the parquet file and count entries
 		end = false
-		var records []*v3.AggTradeParquet
-		for recordCh, readErrCh := data.ReadParquet[v3.AggTradeParquet](parquetPath); !end; {
+		var records []*binance.AggTradeParquet
+		for recordCh, readErrCh := data.ReadParquet[binance.AggTradeParquet](parquetPath); !end; {
 			select {
 			case record, ok := <-recordCh:
 				if ok {

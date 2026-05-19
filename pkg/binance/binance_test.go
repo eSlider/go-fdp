@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/eslider/go-binance-fdp/pkg/binance/v3"
 	"github.com/eslider/go-binance-fdp/pkg/data"
 	"github.com/eslider/go-binance-fdp/pkg/fs"
+	"github.com/eslider/go-binance-fdp/pkg/integrity"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -55,7 +55,7 @@ func TestKlineParquetRoundTrip(t *testing.T) {
 	date := time.Date(2023, 10, 26, 0, 0, 0, 0, time.UTC)
 	openTime := date.Add(12*time.Hour + 30*time.Minute)
 
-	kline := &v3.Kline{
+	kline := &Kline{
 		OpenTime:   openTime.UnixMilli(),
 		CloseTime:  openTime.Add(time.Minute).UnixMilli(),
 		OpenPrice:  100,
@@ -76,7 +76,7 @@ func TestKlineParquetRoundTrip(t *testing.T) {
 
 func TestAggTradeParquetRoundTrip(t *testing.T) {
 	now := time.Date(2025, 12, 13, 12, 0, 0, 0, time.UTC)
-	trade := &v3.AggTrade{
+	trade := &AggTrade{
 		AggTradeID:       12345,
 		Price:            100000.50,
 		Quantity:         0.5,
@@ -97,10 +97,10 @@ func TestAggTradeParquetRoundTrip(t *testing.T) {
 }
 
 func TestSortAggTradesByID(t *testing.T) {
-	trades := []*v3.AggTrade{
+	trades := []*AggTrade{
 		{AggTradeID: 5}, {AggTradeID: 2}, {AggTradeID: 8}, {AggTradeID: 1},
 	}
-	sortAggTradesByID(trades)
+	data.SortBy(trades, func(t *AggTrade) int64 { return t.AggTradeID })
 	for i := 1; i < len(trades); i++ {
 		assert.GreaterOrEqual(t, trades[i].AggTradeID, trades[i-1].AggTradeID)
 	}
@@ -124,8 +124,8 @@ func TestAPI_GetCurrentCandles(t *testing.T) {
 
 	for _, market := range []string{"BTCUSDT", "ETHUSDT"} {
 		t.Run(market, func(t *testing.T) {
-			candles, err := v3.Klines(t.Context(), &v3.KlineRequest{
-				Base: v3.SymbolRequest{
+			candles, err := FetchKlines(t.Context(), &KlineRequest{
+				Base: SymbolRequest{
 					Symbol:    market,
 					StartTime: new(start),
 					EndTime:   new(end),
@@ -186,6 +186,36 @@ func TestETL_CurrentDayKlines(t *testing.T) {
 	require.NoError(t, err)
 	lastAfter := cachedAfter[len(cachedAfter)-1].OpenTime
 	assert.GreaterOrEqual(t, lastAfter, lastBefore)
+}
+
+func TestETL_CurrentDayKlines_IntegrityAudit(t *testing.T) {
+	skipIntegration(t)
+
+	consumer := mustHistoryConsumer(t)
+	now := time.Now().UTC()
+	asset := spotKlineAsset("BNBUSDT", now)
+
+	_, err := consumer.FetchAndCacheCurrentDay(asset)
+	require.NoError(t, err)
+
+	currentHour := now.Hour()
+	targets := BuildHourlyTargets(asset, now, 0, currentHour, func(hour int) bool {
+		return hour < currentHour
+	})
+	db, err := integrity.OpenDB()
+	require.NoError(t, err)
+	defer db.Close()
+	frameMs := int64(time.Duration(asset.Frame) / time.Millisecond)
+	issues, _, err := integrity.AuditHourlyTargets(t.Context(), db, targets, frameMs)
+	require.NoError(t, err)
+	var errors []integrity.Issue
+	for _, iss := range issues {
+		if iss.Severity == integrity.SeverityError && iss.Code != integrity.CodeMissingInterval {
+			errors = append(errors, iss)
+			t.Logf("integrity: %s %s", iss.Code, iss.Detail)
+		}
+	}
+	assert.Empty(t, errors, "hourly kline integrity: %s", integrity.FormatIssues(issues))
 }
 
 func TestETL_CurrentDayAggTrades(t *testing.T) {

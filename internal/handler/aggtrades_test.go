@@ -9,32 +9,40 @@ import (
 	"testing"
 	"time"
 
-	"github.com/eslider/go-binance-fdp/internal/repository"
-	"github.com/eslider/go-binance-fdp/internal/service"
+	"github.com/eslider/go-binance-fdp/internal/market"
+	"github.com/eslider/go-binance-fdp/internal/store"
 	"github.com/eslider/go-binance-fdp/pkg/binance"
+	"github.com/eslider/go-binance-fdp/pkg/etl"
+	"github.com/eslider/go-binance-fdp/pkg/integrity"
 )
 
 // TestAggTradesHandler tests the /v1/aggtrades endpoint
 func TestAggTradesHandler(t *testing.T) {
-	// Create real repository
-	repo, err := repository.NewDuckDBRepository()
+	st, err := store.NewStore()
 	if err != nil {
-		t.Fatalf("Failed to create repository: %v", err)
+		t.Fatalf("store: %v", err)
 	}
-	defer repo.Close()
+	defer st.Close()
 
-	// Create real history consumer
 	ctx := context.Background()
 	consumer, err := binance.NewHistoryConsumer(ctx)
 	if err != nil {
-		t.Fatalf("Failed to create history consumer: %v", err)
+		t.Fatalf("history consumer: %v", err)
 	}
 
-	// Create real service
-	svc := service.NewMarketService(repo, consumer)
+	src := binance.NewSource(consumer)
+	router := etl.NewRouter(
+		map[etl.Source]etl.BulkLoader{etl.SourceBinance: src},
+		map[etl.Source]etl.LiveSeries{etl.SourceBinance: src},
+	)
+	db, err := integrity.OpenDB()
+	if err != nil {
+		t.Fatalf("duckdb: %v", err)
+	}
+	defer db.Close()
 
-	// Create handler with real service
-	handler := NewMarketHandler(svc)
+	api := market.NewAPI(st, router, consumer, db)
+	handler := NewMarketHandler(api)
 
 	t.Run("Returns correct JSON structure for Grafana", func(t *testing.T) {
 		now := time.Now().UTC()

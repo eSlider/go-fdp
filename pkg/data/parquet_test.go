@@ -2,10 +2,10 @@ package data
 
 import (
 	"fmt"
+	"github.com/eslider/go-binance-fdp/pkg/fs"
 	"math/rand"
 	"os"
 	"path/filepath"
-	"github.com/eslider/go-binance-fdp/pkg/fs"
 	"testing"
 	"time"
 )
