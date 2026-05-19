@@ -79,6 +79,8 @@ func (w *gzipResponseWriter) Write(b []byte) (int, error) {
 	return w.gz.Write(b)
 }
 
+// WriteHeader overrides the default implementation of WriteHeader
+// to remove the Content-Length header.
 func (w *gzipResponseWriter) WriteHeader(statusCode int) {
 	w.Header().Del("Content-Length")
 	w.ResponseWriter.WriteHeader(statusCode)

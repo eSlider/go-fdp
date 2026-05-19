@@ -49,7 +49,7 @@ type Candle struct {
 }
 
 type AggTrade struct {
-	ID           int64     `json:"id"`
+	ID           int64     `json:"id" mapstructure:"aggTradeId"`
 	Price        float64   `json:"price"`
 	Quantity     float64   `json:"quantity"`
 	FirstTradeID int64     `json:"firstTradeId"`

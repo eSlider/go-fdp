@@ -15,19 +15,19 @@ import (
 
 // Options configures a kline integrity audit run.
 type Options struct {
-	MarketType string
-	Market     string
-	Frame      data.Frame
-	From       time.Time
-	To         time.Time
-	TodayOnly  bool
-	CountOnly  bool
+	MarketType string     // "spot" or "futures"
+	Market     string     // "BTCUSDT"
+	Frame      data.Frame // Frame specifies the time interval for candle aggregation in trading data.
+	From       time.Time  // From is the start date for the audit.
+	To         time.Time  // To is the end date for the audit.
+	TodayOnly  bool       // Only audit today's files.'
+	CountOnly  bool       // Only count rows, do not audit.
 }
 
 // Result holds issues and optional count rows from an audit run.
 type Result struct {
-	Issues []integrity.Issue
-	Counts []integrity.CountResult
+	Issues []integrity.Issue       // Issues holds the audit issues.
+	Counts []integrity.CountResult // Counts holds the count rows.
 }
 
 // Audit runs count and/or deep audits for the configured date range.

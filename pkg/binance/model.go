@@ -8,17 +8,10 @@ import (
 	"github.com/eslider/go-fdp/pkg/data"
 )
 
-// Event - event to store daily informations
-type Event struct {
-	Date   time.Time
-	Klines []KlineParquet
-	Info   string
-}
-
 // ETLStatus - represents asset-processing status
 type ETLStatus int
 
-func (s *ETLStatus) String() any {
+func (s *ETLStatus) String() string {
 	return []string{
 		"error",
 		"zip-downloading",
@@ -41,7 +34,7 @@ const (
 // AssetETLInfo - asset ETL info
 type AssetETLInfo struct {
 	Status ETLStatus    // Status of the asset ETL
-	Buffer *data.Buffer // Buffer which should be used used to cache from zip -> csv file to parquet file
+	Buffer *data.Buffer // Buffer that should be used to cache from zip -> csv file to a parquet file
 	Path   string       // Path to the asset zip file
 	Err    error        // Error if any
 	Info   string       // Additional info
@@ -264,8 +257,8 @@ func (q *HistoryAsset) IsHistoryLinkAvailable() (err error) {
 	return nil
 }
 
-// ParquetPath - returns parquet file path
-//   - Create link to work with hive partitioning
+// ParquetPath - returns a parquet file path
+//   - Create a link to work with hive partitioning
 func (q *HistoryAsset) ParquetPath() string {
 	// For aggTrades, don't include frame in the path since they don't have frames
 	if q.Indicator == AggTrades {
@@ -345,9 +338,4 @@ func (q *HistoryAsset) HourlyParquetPath(hour int) string {
 // IsToday - Check  date,s before now until midnight, handle using other api
 func (q *HistoryAsset) IsToday() bool {
 	return data.IsToday(q.Date)
-}
-
-// Transformer - interface for transforming data to several formats
-type Transformer interface {
-	Parquet() (any, error) // Parquet - transforms the data to parquet format
 }

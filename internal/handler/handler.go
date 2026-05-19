@@ -3,7 +3,9 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
+
 	"github.com/eslider/go-fdp/internal/market"
+	"github.com/eslider/go-fdp/internal/query"
 	"github.com/eslider/go-fdp/pkg/data"
 	"github.com/eslider/go-fdp/pkg/etl"
 
@@ -72,15 +74,15 @@ func (h *MarketHandler) GetMarketHistory(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	q := market.Query{
+	q := query.Query{
 		From:       *data.AnyTimestampToTime(dto.From),
 		To:         *data.AnyTimestampToTime(dto.To),
 		Market:     dto.Market,
 		Exchange:   dto.Exchange,
 		Source:     etl.Source(dto.Exchange),
-		MarketType: market.NewMarketType(dto.MarketType),
+		MarketType: query.NewMarketType(dto.MarketType),
 		Frame:      data.NewFrame(dto.Frame),
-		Indicator:  market.Indicator(dto.Indicator),
+		Indicator:  query.Indicator(dto.Indicator),
 	}
 
 	candles, err := h.api.Candles(r.Context(), q)
@@ -104,15 +106,15 @@ func (h *MarketHandler) GetAggTrades(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	q := market.Query{
+	q := query.Query{
 		From:       *data.AnyTimestampToTime(dto.From),
 		To:         *data.AnyTimestampToTime(dto.To),
 		Market:     dto.Market,
 		Exchange:   dto.Exchange,
 		Source:     etl.Source(dto.Exchange),
-		MarketType: market.NewMarketType(dto.MarketType),
+		MarketType: query.NewMarketType(dto.MarketType),
 		Frame:      data.NoFrame,
-		Indicator:  market.AggTrades,
+		Indicator:  query.AggTrades,
 	}
 
 	aggTrades, err := h.api.AggTrades(r.Context(), q)

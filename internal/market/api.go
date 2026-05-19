@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/eslider/go-fdp/internal/query"
 	"github.com/eslider/go-fdp/internal/store"
 	"github.com/eslider/go-fdp/pkg/binance"
 	"github.com/eslider/go-fdp/pkg/etl"
@@ -33,11 +34,11 @@ func NewAPI(st *store.Store, router *etl.Router, consumer *binance.HistoryConsum
 }
 
 // Candles returns historical klines for the query range (lazy ETL + gap repair).
-func (a *API) Candles(ctx context.Context, q Query) ([]*Candle, error) {
+func (a *API) Candles(ctx context.Context, q query.Query) ([]*query.Candle, error) {
 	if err := a.ensureBulkForRange(ctx, q); err != nil {
 		slog.Error("ensure bulk ETL", "error", err)
 	}
-	if q.Indicator == Klines {
+	if q.Indicator == query.Klines {
 		job := q.ETLJob(q.To.UTC())
 		if err := a.Repair.EnsureForQuery(ctx, job, q.From, q.To); err != nil {
 			return nil, err
@@ -47,7 +48,7 @@ func (a *API) Candles(ctx context.Context, q Query) ([]*Candle, error) {
 }
 
 // AggTrades returns aggregate trades for the query range.
-func (a *API) AggTrades(ctx context.Context, q Query) ([]*AggTrade, error) {
+func (a *API) AggTrades(ctx context.Context, q query.Query) ([]*query.AggTrade, error) {
 	if q.IsToday() {
 		return a.fetchAggTradesFromAPI(ctx, q)
 	}
@@ -57,7 +58,7 @@ func (a *API) AggTrades(ctx context.Context, q Query) ([]*AggTrade, error) {
 	return a.Store.GetAggTrades(ctx, q)
 }
 
-func (a *API) fetchAggTradesFromAPI(ctx context.Context, q Query) ([]*AggTrade, error) {
+func (a *API) fetchAggTradesFromAPI(ctx context.Context, q query.Query) ([]*query.AggTrade, error) {
 	trades, err := binance.FetchAggTrades(ctx, &binance.AggTradeRequest{
 		Base: binance.SymbolRequest{
 			Symbol:    q.Market,
@@ -69,9 +70,9 @@ func (a *API) fetchAggTradesFromAPI(ctx context.Context, q Query) ([]*AggTrade, 
 	if err != nil {
 		return nil, fmt.Errorf("fetch aggTrades: %w", err)
 	}
-	result := make([]*AggTrade, len(trades))
+	result := make([]*query.AggTrade, len(trades))
 	for i, t := range trades {
-		result[i] = &AggTrade{
+		result[i] = &query.AggTrade{
 			ID:           t.AggTradeID,
 			Price:        t.Price,
 			Quantity:     t.Quantity,
@@ -84,7 +85,7 @@ func (a *API) fetchAggTradesFromAPI(ctx context.Context, q Query) ([]*AggTrade, 
 	return result, nil
 }
 
-func (a *API) ensureBulkForRange(ctx context.Context, q Query) error {
+func (a *API) ensureBulkForRange(ctx context.Context, q query.Query) error {
 	g, ctx := errgroup.WithContext(ctx)
 	for cur := q.From.UTC(); !cur.After(q.To.UTC()); cur = cur.AddDate(0, 0, 1) {
 		cur := cur

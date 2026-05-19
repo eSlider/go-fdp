@@ -40,7 +40,7 @@ func (s *Source) DownloadAndTransform(ctx context.Context, job etl.Job) (<-chan 
 					continue
 				}
 				infoCh <- etl.Progress{
-					Status: assetETLStatusString(pi.Status),
+					Status: pi.Status.String(),
 					Path:   pi.Path,
 					Info:   pi.Info,
 					Err:    pi.Err,
@@ -58,6 +58,8 @@ func (s *Source) DownloadAndTransform(ctx context.Context, job etl.Job) (<-chan 
 	return infoCh, errCh
 }
 
+// RunHourPlan runs a plan of operations for a single hour.
+// It executes a series of steps to refresh open data, seal completed hours, and other operations.
 func (s *Source) RunHourPlan(ctx context.Context, job etl.Job, plan []hourplan.Step) error {
 	asset := AssetFromJob(job)
 	midnight := time.Date(job.Date.Year(), job.Date.Month(), job.Date.Day(), 0, 0, 0, 0, time.UTC)
@@ -81,6 +83,8 @@ func (s *Source) RunHourPlan(ctx context.Context, job etl.Job, plan []hourplan.S
 	return nil
 }
 
+// BuildAuditTargets returns a list of hourly targets for auditing.
+// It generates targets for integrity checks based on the provided asset and date range.
 func (s *Source) BuildAuditTargets(job etl.Job, from, to time.Time) ([]integrity.HourlyTarget, error) {
 	asset := AssetFromJob(job)
 	return BuildAuditTargetsForRange(asset, from, to), nil
