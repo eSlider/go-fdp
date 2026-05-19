@@ -31,6 +31,16 @@ func (h *MarketHandler) RegisterRoutes(r *mux.Router) {
 	r.HandleFunc("/v1/aggtrades", h.GetAggTrades).Methods("GET")
 	r.HandleFunc("/v1/symbols", h.GetSymbols).Methods("GET")
 	r.HandleFunc("/v1/markets", h.GetMarkets).Methods("GET")
+	r.HandleFunc("/v1/predictions", h.GetPredictions).Methods("GET")
+}
+
+// PredictionsRequestDTO represents query parameters for /v1/predictions.
+type PredictionsRequestDTO struct {
+	From     int64  `validate:"required"`
+	To       int64  `validate:"required,gtfield=From"`
+	Market   string `validate:"omitempty"`
+	Exchange string `validate:"omitempty"`
+	Frame    string `validate:"omitempty,oneof=1m 5m 15m 1h 4h"`
 }
 
 // AssetRequestDTO represents query parameters for /v1/data
@@ -137,6 +147,24 @@ func (h *MarketHandler) GetMarkets(w http.ResponseWriter, r *http.Request) {
 		response[i] = map[string]string{"name": v}
 	}
 	h.writeJSON(w, response)
+}
+
+func (h *MarketHandler) GetPredictions(w http.ResponseWriter, r *http.Request) {
+	dto := &PredictionsRequestDTO{
+		Exchange: "polymarket",
+		Frame:    "5m",
+	}
+	if err := h.bindAndValidate(r, dto); err != nil {
+		h.writeError(w, err, http.StatusBadRequest)
+		return
+	}
+	q := market.NewPredictionQuery(dto.Market, dto.Exchange, dto.Frame, dto.From, dto.To)
+	predictions, err := h.api.Predictions(r.Context(), q)
+	if err != nil {
+		h.writeError(w, err, http.StatusInternalServerError)
+		return
+	}
+	h.writeJSON(w, predictions)
 }
 
 func (h *MarketHandler) GetSymbols(w http.ResponseWriter, r *http.Request) {

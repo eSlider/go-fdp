@@ -58,6 +58,27 @@ type AggTrade struct {
 	IsBuyerMaker bool      `json:"isBuyerMaker"`
 }
 
+// Prediction is a Polymarket implied-probability snapshot.
+type Prediction struct {
+	Time        time.Time `json:"time"`
+	UpPrice     float64   `json:"upPrice"`
+	DownPrice   float64   `json:"downPrice"`
+	Frame       string    `json:"frame"`
+	Market      string    `json:"market"`
+	EventSlug   string    `json:"eventSlug"`
+	WindowStart time.Time `json:"windowStart"`
+	WindowEnd   time.Time `json:"windowEnd"`
+}
+
+// PredictionQuery is a read request for /v1/predictions.
+type PredictionQuery struct {
+	From     time.Time
+	To       time.Time
+	Market   string
+	Exchange string
+	Frame    data.Frame
+}
+
 // Query is a market data read request (HTTP and parquet reads).
 type Query struct {
 	From       time.Time

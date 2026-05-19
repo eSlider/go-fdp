@@ -17,10 +17,11 @@ import (
 
 // API is the application layer for market data HTTP use cases.
 type API struct {
-	Store    *store.Store
-	ETL      *etl.Router
-	Repair   *gapfill.Repairer
-	Consumer *binance.HistoryConsumer
+	Store          *store.Store
+	ETL            *etl.Router
+	Repair         *gapfill.Repairer
+	Consumer       *binance.HistoryConsumer
+	PredictionsSvc *PredictionsService
 }
 
 // NewAPI wires store, ETL router, and lazy gap repair.

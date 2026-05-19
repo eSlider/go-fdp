@@ -6,5 +6,6 @@ type Source string
 const (
 	SourceBinance       Source = "binance"
 	SourceBitfinex      Source = "bitfinex"
+	SourcePolymarket    Source = "polymarket"
 	SourcePolymarketAvg Source = "polymarket_avg"
 )

@@ -42,6 +42,11 @@ func (r *Store) Close() error {
 	return r.db.Close()
 }
 
+// DataPath returns the absolute parquet cache root.
+func (r *Store) DataPath() string {
+	return r.dataPath
+}
+
 func (r *Store) GetCandles(ctx context.Context, req query.Query) ([]*query.Candle, error) {
 	histReq, todayReq := splitCandleRequest(req)
 	var result []*query.Candle

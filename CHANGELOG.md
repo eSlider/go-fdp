@@ -6,6 +6,9 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- `GET /v1/predictions` — Polymarket BTC Up/Down implied probability history (`1m`, `5m`, `15m`, `1h`, `4h`)
+- `pkg/polymarket` — Gamma/CLOB client, frame registry, lazy backfill, Hive Parquet store, background poller
+- `cmd/polymarket-import` — optional bulk seed from Hugging Face Parquet or poly_data CSV
 - Package `doc.go` files and README links for [pkg.go.dev](https://pkg.go.dev/github.com/eslider/go-fdp)
 
 ### Changed

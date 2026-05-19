@@ -187,7 +187,8 @@ sequenceDiagram
 ```
 ├── cmd/
 │   ├── fdp/                # HTTP server (finance data proxy)
-│   └── audit/              # Parquet integrity CLI
+│   ├── audit/              # Parquet integrity CLI
+│   └── polymarket-import/  # Optional Polymarket bulk Parquet seed
 ├── internal/
 │   ├── handler/            # REST handlers (/v1/*)
 │   ├── market/             # Use cases: Candles, AggTrades, lazy repair
@@ -195,6 +196,7 @@ sequenceDiagram
 │   └── store/              # DuckDB reads over Parquet
 ├── pkg/
 │   ├── binance/            # S3 ETL, REST client, live hourly seal
+│   ├── polymarket/         # Gamma/CLOB predictions ETL and Parquet cache
 │   ├── etl/                # Router, BulkLoader, LiveSeries
 │   ├── gapfill/            # Lazy Repairer + hourplan
 │   ├── integrity/          # Parquet audit + policy
@@ -236,6 +238,30 @@ Compressed aggregate trades for a time range.
 ### `GET /v1/markets` · `GET /v1/symbols`
 
 List known markets and tradable symbols (from cached metadata).
+
+### `GET /v1/predictions`
+
+Polymarket BTC Up/Down implied probability history (Hive Parquet cache, lazy CLOB backfill).
+
+| Query | Required | Default | Description |
+| --- | --- | --- | --- |
+| `from` | yes | — | Start time (Unix ms) |
+| `to` | yes | — | End time (Unix ms) |
+| `market` | no | `BTCUSDT` | Normalized symbol |
+| `exchange` | no | `polymarket` | Source id |
+| `frame` | no | `5m` | `1m`, `5m`, `15m`, `1h`, `4h` |
+
+```bash
+curl -G 'http://localhost:8082/v1/predictions' \
+  --data-urlencode 'market=BTCUSDT' \
+  --data-urlencode 'frame=5m' \
+  --data-urlencode 'from=1735689600000' \
+  --data-urlencode 'to=1735776000000'
+```
+
+Background polling: `-polymarket-poll-interval=30s` (disable with `-polymarket-poll-disable`).
+
+Bulk historical seed (optional): `go run ./cmd/polymarket-import -source hf -data-dir /path/to/parquet -frame 5m -from ... -to ...`
 
 ## Library Usage
 

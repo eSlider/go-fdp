@@ -8,7 +8,10 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/eslider/go-fdp/internal/handler"
 	"github.com/eslider/go-fdp/internal/market"
@@ -16,8 +19,9 @@ import (
 	"github.com/eslider/go-fdp/pkg/binance"
 	"github.com/eslider/go-fdp/pkg/etl"
 	"github.com/eslider/go-fdp/pkg/etl/bitfinex"
-	"github.com/eslider/go-fdp/pkg/etl/polymarket"
+	etlpoly "github.com/eslider/go-fdp/pkg/etl/polymarket"
 	"github.com/eslider/go-fdp/pkg/integrity"
+	"github.com/eslider/go-fdp/pkg/polymarket"
 	"github.com/gorilla/mux"
 )
 
@@ -26,6 +30,8 @@ func main() {
 	slog.SetDefault(logger)
 
 	port := flag.Int("port", 8082, "port to listen on")
+	polyPoll := flag.Duration("polymarket-poll-interval", 30*time.Second, "polymarket background poll interval")
+	polyPollDisable := flag.Bool("polymarket-poll-disable", false, "disable polymarket background poller")
 	flag.Parse()
 
 	st, err := store.NewStore()
@@ -48,7 +54,7 @@ func main() {
 		map[etl.Source]etl.LiveSeries{etl.SourceBinance: binanceSource},
 	)
 	_ = bitfinex.NewStub()
-	_ = polymarket.NewStub()
+	_ = etlpoly.NewStub()
 
 	db, err := integrity.OpenDB()
 	if err != nil {
@@ -58,13 +64,37 @@ func main() {
 	defer db.Close()
 
 	api := market.NewAPI(st, router, consumer, db)
+
+	pmClient := polymarket.NewClient()
+	pmStore := polymarket.NewStore(st.DataPath())
+	pmCollector := polymarket.NewCollector(pmClient, pmStore)
+	api.PredictionsSvc = &market.PredictionsService{Collector: pmCollector}
+
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+
+	if !*polyPollDisable {
+		poller := polymarket.NewPoller(pmCollector, pmStore, polymarket.PollerConfig{
+			Interval: *polyPoll,
+		})
+		go poller.Run(ctx)
+	}
+
 	h := handler.NewMarketHandler(api)
 
 	routerHTTP := mux.NewRouter()
 	h.RegisterRoutes(routerHTTP)
 
+	srv := &http.Server{Addr: fmt.Sprintf(":%d", *port), Handler: gzipMiddleware(routerHTTP)}
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer shutdownCancel()
+		_ = srv.Shutdown(shutdownCtx)
+	}()
+
 	slog.Info("starting fdp server", "port", *port)
-	if err := http.ListenAndServe(fmt.Sprintf(":%d", *port), gzipMiddleware(routerHTTP)); err != nil {
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		slog.Error("server failed", "error", err)
 		os.Exit(1)
 	}
