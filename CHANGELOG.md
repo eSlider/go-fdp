@@ -4,6 +4,21 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-05-20
+
+### Added
+
+- `cmd/predictions` — live DuckDB-style CLI table (Polymarket probs + Binance `start_btc`, `current_diff`, `target_btc` / `target_diff`)
+- `tools/genpolymarketfixture` — tiny HF-schema Parquet for import smoke tests
+- `cmd/polymarket-import` — `-source api` live Gamma+CLOB backfill, `-year`, `-max-days`, `-max-windows`
+
+### Fixed
+
+- CLOB `FetchPrice`: try `/midpoint` before `/price?side=BUY` (avoids 400 without `side`)
+- `FetchCurrentSnapshot`: fall back to 15m/5m event slugs when native frame slug is missing
+
+## [0.3.0] - 2026-05-19
+
 ### Added
 
 - `GET /v1/predictions` — Polymarket BTC Up/Down implied probability history (`1m`, `5m`, `15m`, `1h`, `4h`)
