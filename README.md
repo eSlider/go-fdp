@@ -202,6 +202,7 @@ sequenceDiagram
 │   ├── integrity/          # Parquet audit + policy
 │   ├── data/               # Parquet, CSV, drain helpers
 │   └── fs/                 # File helpers
+├── tools/                  # e.g. genpolymarketfixture for import smoke tests
 ├── docker/                 # Grafana, Loki, Promtail configs
 ├── compose.yml
 └── data/                   # Local Parquet cache (gitignored)
@@ -261,7 +262,23 @@ curl -G 'http://localhost:8082/v1/predictions' \
 
 Background polling: `-polymarket-poll-interval=30s` (disable with `-polymarket-poll-disable`).
 
-Bulk historical seed (optional): `go run ./cmd/polymarket-import -source hf -data-dir /path/to/parquet -frame 5m -from ... -to ...`
+Bulk historical seed (optional):
+
+- **HF** — directory of Parquet files already in FDP prediction row schema (see `go run ./tools/genpolymarketfixture` for a tiny sample under `testdata/polymarket/hf/`).
+- **polydata** — CSV with `timestamp`/`ts`, `price`, `slug`/`event_slug` columns (`.csv.xz` not supported yet; decompress first).
+- **api** — live Gamma + CLOB backfill into `data/` (rate-limited; a full calendar year can take many hours).
+
+```bash
+# Sample HF fixture → Parquet cache (fast)
+go run ./tools/genpolymarketfixture
+go run ./cmd/polymarket-import -source hf -data-dir ./testdata/polymarket/hf -year 2026 -market BTCUSDT -frame 5m
+
+# Live backfill for 2026 YTD (omit -max-* for full days; each 5m day is ~288 API windows)
+go run ./cmd/polymarket-import -source api -year 2026 -market BTCUSDT -frame 5m
+
+# Smoke test (first day only, first 48 five-minute windows)
+go run ./cmd/polymarket-import -source api -year 2026 -max-days 1 -max-windows 48 -market BTCUSDT -frame 5m
+```
 
 ## Library Usage
 

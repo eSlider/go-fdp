@@ -21,6 +21,10 @@ type clobPriceResponse struct {
 	Price string `json:"price"`
 }
 
+type clobMidpointResponse struct {
+	Mid string `json:"mid"`
+}
+
 // FetchPricesHistory returns CLOB price history for a token.
 func (c *Client) FetchPricesHistory(ctx context.Context, tokenID string, start, end time.Time, fidelityMin int) ([]pricePoint, error) {
 	q := url.Values{
@@ -42,9 +46,17 @@ func (c *Client) FetchPricesHistory(ctx context.Context, tokenID string, start, 
 	return resp.History, nil
 }
 
-// FetchPrice returns the current price for a single token.
+// FetchPrice returns the current implied probability for a token.
+// Tries /midpoint first (no side argument); falls back to /price?side=BUY.
 func (c *Client) FetchPrice(ctx context.Context, tokenID string) (float64, error) {
-	q := url.Values{"token_id": {tokenID}}
+	mq := url.Values{"token_id": {tokenID}}
+	var mid clobMidpointResponse
+	if err := c.getJSON(ctx, c.clob, "/midpoint", mq, &mid); err == nil && mid.Mid != "" {
+		if p, perr := strconv.ParseFloat(mid.Mid, 64); perr == nil {
+			return p, nil
+		}
+	}
+	q := url.Values{"token_id": {tokenID}, "side": {"BUY"}}
 	var resp clobPriceResponse
 	if err := c.getJSON(ctx, c.clob, "/price", q, &resp); err != nil {
 		return 0, err

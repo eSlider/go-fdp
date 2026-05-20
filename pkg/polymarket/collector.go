@@ -12,6 +12,8 @@ import (
 type Collector struct {
 	client *Client
 	store  *Store
+	// MaxWindowsPerDay limits API calls per UTC day (0 = unlimited). Used by bulk import smoke tests.
+	MaxWindowsPerDay int
 }
 
 func NewCollector(client *Client, store *Store) *Collector {
@@ -49,6 +51,9 @@ func (c *Collector) EnsureRange(ctx context.Context, market string, frame data.F
 func (c *Collector) backfillDay(ctx context.Context, asset Asset, from, to time.Time) error {
 	var all []Snapshot
 	windows := WindowsInRange(from, to, asset.Frame)
+	if c.MaxWindowsPerDay > 0 && len(windows) > c.MaxWindowsPerDay {
+		windows = windows[:c.MaxWindowsPerDay]
+	}
 	for _, w := range windows {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -115,12 +120,13 @@ func (c *Collector) fetchWindow(ctx context.Context, frame data.Frame, windowSta
 }
 
 // FetchCurrentSnapshot resolves the active window and returns a live price snapshot.
+// For frames without a native Polymarket window (1m/1h/4h or when the native
+// slug 404s), the enclosing 5m or 15m event is used as a proxy.
 func (c *Collector) FetchCurrentSnapshot(ctx context.Context, market string, frame data.Frame) ([]Snapshot, error) {
 	_ = market
 	now := time.Now().UTC()
 	ws := AlignWindowStart(now, frame)
-	slug := SlugForWindow(frame, ws)
-	ev, err := c.client.FetchEventBySlug(ctx, slug)
+	ev, fallback, err := c.resolveCurrentEvent(ctx, frame, ws, now)
 	if err != nil {
 		return nil, err
 	}
@@ -129,7 +135,7 @@ func (c *Collector) FetchCurrentSnapshot(ctx context.Context, market string, fra
 		return nil, err
 	}
 	winEnd := ws.Add(NativeFrameDuration(frame))
-	if !ev.WindowEnd.IsZero() {
+	if !ev.WindowEnd.IsZero() && !fallback {
 		winEnd = ev.WindowEnd
 	}
 	return []Snapshot{{
@@ -141,6 +147,31 @@ func (c *Collector) FetchCurrentSnapshot(ctx context.Context, market string, fra
 		WindowStart: ws,
 		WindowEnd:   winEnd,
 	}}, nil
+}
+
+// resolveCurrentEvent tries the native slug for frame, falling back to 15m
+// then 5m events that enclose now.
+func (c *Collector) resolveCurrentEvent(ctx context.Context, frame data.Frame, ws, now time.Time) (*ResolvedEvent, bool, error) {
+	ev, err := c.client.FetchEventBySlug(ctx, SlugForWindow(frame, ws))
+	if err == nil {
+		return ev, false, nil
+	}
+	if err != ErrNotFound {
+		return nil, false, err
+	}
+	for _, fb := range []data.Frame{data.FifteenMin, data.FiveMinute} {
+		if fb == frame {
+			continue
+		}
+		ev, err = c.client.FetchEventBySlug(ctx, SlugForWindow(fb, AlignWindowStart(now, fb)))
+		if err == nil {
+			return ev, true, nil
+		}
+		if err != ErrNotFound {
+			return nil, false, err
+		}
+	}
+	return nil, false, ErrNotFound
 }
 
 func truncateDay(t time.Time) time.Time {
