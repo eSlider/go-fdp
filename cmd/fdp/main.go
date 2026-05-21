@@ -118,6 +118,11 @@ func (w *gzipResponseWriter) WriteHeader(statusCode int) {
 
 func gzipMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// REST JSON is consumed by Grafana Infinity without gzip decoding.
+		if strings.HasPrefix(r.URL.Path, "/v1/") {
+			next.ServeHTTP(w, r)
+			return
+		}
 		if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
 			next.ServeHTTP(w, r)
 			return

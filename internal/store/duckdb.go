@@ -162,7 +162,7 @@ func (r *Store) candlesFromParquet(req query.Query) ([]*query.Candle, error) {
 
 			volume as volume
 
-		FROM read_parquet('%<DataPath>s/*/*/*/*/*/*/*/data.parquet')
+		FROM read_parquet('%<ParquetGlob>s', hive_partitioning = true)
 
 		WHERE mtype = '%<MarketType>s'
 			AND indicator = '%<Indicator>s'
@@ -172,23 +172,23 @@ func (r *Store) candlesFromParquet(req query.Query) ([]*query.Candle, error) {
 		ORDER BY
 			openTime DESC
 	`, struct {
-		DataPath   string
-		MarketType string
-		Indicator  string
-		Market     string
-		Frame      string
-		From       int64
-		To         int64
-		Interval   string
+		ParquetGlob string
+		MarketType  string
+		Indicator   string
+		Market      string
+		Frame       string
+		From        int64
+		To          int64
+		Interval    string
 	}{
-		DataPath:   r.dataPath,
-		MarketType: req.MarketType.String(),
-		Indicator:  req.Indicator.String(),
-		Market:     req.Market,
-		Frame:      req.Frame.String(),
-		From:       req.From.UnixMilli(),
-		To:         req.To.UnixMilli(),
-		Interval:   intervalStr,
+		ParquetGlob: klinesParquetGlob(r.dataPath, req),
+		MarketType:  req.MarketType.String(),
+		Indicator:   req.Indicator.String(),
+		Market:      req.Market,
+		Frame:       req.Frame.String(),
+		From:        req.From.UnixMilli(),
+		To:          req.To.UnixMilli(),
+		Interval:    intervalStr,
 	})
 
 	var result []*query.Candle
@@ -300,7 +300,7 @@ func (r *Store) aggTradesFromParquet(req query.Query) ([]*query.AggTrade, error)
 			make_timestamp(year::BIGINT, month::BIGINT, day::BIGINT, 0, 0, 0.0) + (open_time::BIGINT * interval '1 millisecond') as time,
 			is_buyer_maker as isBuyerMaker
 
-		FROM read_parquet('%<DataPath>s/*/*/*/*/*/*/*/data.parquet')
+		FROM read_parquet('%<ParquetGlob>s', hive_partitioning = true)
 
 		WHERE mtype = '%<MarketType>s'
 			AND indicator = '%<Indicator>s'
@@ -309,19 +309,19 @@ func (r *Store) aggTradesFromParquet(req query.Query) ([]*query.AggTrade, error)
 		ORDER BY
 			time DESC
 	`, struct {
-		DataPath   string
-		MarketType string
-		Indicator  string
-		Market     string
-		From       int64
-		To         int64
+		ParquetGlob string
+		MarketType  string
+		Indicator   string
+		Market      string
+		From        int64
+		To          int64
 	}{
-		DataPath:   r.dataPath,
-		MarketType: req.MarketType.String(),
-		Indicator:  req.Indicator.String(),
-		Market:     req.Market,
-		From:       req.From.UnixMilli(),
-		To:         req.To.UnixMilli(),
+		ParquetGlob: aggTradesParquetGlob(r.dataPath, req),
+		MarketType:  req.MarketType.String(),
+		Indicator:   req.Indicator.String(),
+		Market:      req.Market,
+		From:        req.From.UnixMilli(),
+		To:          req.To.UnixMilli(),
 	})
 
 	var result []*query.AggTrade
@@ -422,4 +422,19 @@ func (r *Store) aggTradesFromHourlyParquet(req query.Query) (
 			result = append(result, instance)
 		}
 	}
+}
+
+func klinesParquetGlob(dataPath string, req query.Query) string {
+	return fmt.Sprintf("%s/mtype=%s/indicator=%s/market=%s/frame=%s/year=*/month=*/day=*/data.parquet",
+		dataPath, req.MarketType, req.Indicator, req.Market, req.Frame.String())
+}
+
+func aggTradesParquetGlob(dataPath string, req query.Query) string {
+	return fmt.Sprintf("%s/mtype=%s/indicator=%s/market=%s/year=*/month=*/day=*/data.parquet",
+		dataPath, req.MarketType, req.Indicator, req.Market)
+}
+
+func predictionsParquetGlob(dataPath, market, frame string) string {
+	return fmt.Sprintf("%s/mtype=prediction/source=polymarket/market=%s/frame=%s/year=*/month=*/day=*/data.parquet",
+		dataPath, market, frame)
 }

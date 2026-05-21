@@ -17,6 +17,9 @@ func BuildHourlyTargets(asset *HistoryAsset, day time.Time, fromHour, toHour int
 	if toHour > 23 {
 		toHour = 23
 	}
+	if fromHour > toHour {
+		return nil
+	}
 	targets := make([]integrity.HourlyTarget, 0, toHour-fromHour+1)
 	for hour := fromHour; hour <= toHour; hour++ {
 		start := midnight.Add(time.Duration(hour) * time.Hour)
@@ -59,6 +62,9 @@ func BuildAuditTargetsForRange(asset *HistoryAsset, from, to time.Time) []integr
 			}
 			if toH > currentHour {
 				toH = currentHour
+			}
+			if fromH > toH {
+				continue
 			}
 			ts := BuildHourlyTargets(asset, d, fromH, toH, func(h int) bool {
 				return h < currentHour

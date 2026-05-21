@@ -70,25 +70,21 @@ func (r *Store) predictionsFromParquet(req query.PredictionQuery) ([]*query.Pred
 			event_slug as eventSlug,
 			epoch_ms(window_start) as windowStartMs,
 			epoch_ms(window_end) as windowEndMs
-		FROM read_parquet('%<DataPath>s/*/*/*/*/*/*/*/data.parquet')
-		WHERE mtype = 'prediction'
-			AND source = 'polymarket'
-			AND market = '%<Market>s'
-			AND frame = '%<Frame>s'
-			AND ts >= %<From>d AND ts < %<To>d
+		FROM read_parquet('%<ParquetGlob>s')
+		WHERE ts >= %<From>d AND ts < %<To>d
 		ORDER BY ts ASC
 	`, struct {
-		DataPath string
-		Market   string `validate:"required"`
-		Frame    string `validate:"required"`
-		From     int64
-		To       int64
+		ParquetGlob string
+		Market      string `validate:"required"`
+		Frame       string `validate:"required"`
+		From        int64
+		To          int64
 	}{
-		DataPath: r.dataPath,
-		Market:   req.Market,
-		Frame:    req.Frame.String(),
-		From:     req.From.UnixMilli(),
-		To:       req.To.UnixMilli(),
+		ParquetGlob: predictionsParquetGlob(r.dataPath, req.Market, req.Frame.String()),
+		Market:      req.Market,
+		Frame:       req.Frame.String(),
+		From:        req.From.UnixMilli(),
+		To:          req.To.UnixMilli(),
 	})
 	return drainPredictions(resCh, errCh, req.Frame.String(), req.Market)
 }

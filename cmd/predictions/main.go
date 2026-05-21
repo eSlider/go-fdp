@@ -1,6 +1,4 @@
-// Command predictions prints the current Polymarket BTC Up/Down prediction
-// snapshot for each supported frame as a DuckDB-style ASCII table, enriched
-// with the window-start Binance BTC price and signed diffs vs current/target.
+// Command predictions shows Polymarket BTC Up/Down snapshots (TUI by default, --cli for one-shot table).
 package main
 
 import (
@@ -8,15 +6,32 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"math"
+		"bytes"
+		"io"
+		"math"
 	"os"
 	"strings"
 	"time"
+
+	"charm.land/lipgloss/v2"
 
 	"github.com/eslider/go-fdp/pkg/binance"
 	"github.com/eslider/go-fdp/pkg/data"
 	"github.com/eslider/go-fdp/pkg/polymarket"
 )
+
+var (
+	probUpStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("10")) // green
+	probDownStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))  // red
+)
+
+type appConfig struct {
+	market        string
+	binanceMarket string
+	frames        []data.Frame
+	timeout       time.Duration
+	refresh       time.Duration
+}
 
 type row struct {
 	Frame          string
@@ -28,14 +43,22 @@ type row struct {
 	TargetDiff     string
 	WindowEnd      string
 	WindowEndInMin string
+	UpProbPct      float64
+	ProbDiffPct    float64
+	CurrentDiffPct float64
 }
 
 func main() {
+	cli := flag.Bool("cli", false, "print table once to stdout and exit (default: interactive TUI)")
 	market := flag.String("market", polymarket.DefaultMarket, "polymarket symbol")
 	binanceMarket := flag.String("binance-market", "BTCUSDT", "Binance symbol for reference price")
 	frameList := flag.String("frames", "5m,15m,4h", "comma-separated native Polymarket frames (5m, 15m, 4h)")
-	timeout := flag.Duration("timeout", 30*time.Second, "request timeout")
+	timeout := flag.Duration("timeout", 30*time.Second, "per-request timeout")
+	refresh := flag.Duration("refresh", 5*time.Second, "TUI refresh interval")
 	flag.Parse()
+	if *refresh < time.Second {
+		*refresh = 5 * time.Second
+	}
 
 	frames, err := parseFrames(*frameList)
 	if err != nil {
@@ -43,26 +66,105 @@ func main() {
 		os.Exit(2)
 	}
 
+	cfg := appConfig{
+		market:        *market,
+		binanceMarket: *binanceMarket,
+		frames:        frames,
+		timeout:       *timeout,
+		refresh:       *refresh,
+	}
+
 	client := polymarket.NewClient()
 	store := polymarket.NewStore("")
 	collector := polymarket.NewCollector(client, store)
 
-	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
+	if *cli {
+		if err := runCLI(cfg, collector); err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(1)
+		}
+		return
+	}
+
+	if err := runTUI(cfg, collector); err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+		os.Exit(1)
+	}
+}
+
+func runCLI(cfg appConfig, collector *polymarket.Collector) error {
+	ctx, cancel := context.WithTimeout(context.Background(), cfg.timeout)
 	defer cancel()
+	rows, err := loadRows(ctx, cfg, collector)
+	if err != nil {
+		return err
+	}
+	renderTable(os.Stdout, rows)
+	return nil
+}
 
-	current, currentErr := fetchCurrentBTC(ctx, *binanceMarket)
+func renderTableString(rows []row) string {
+	var buf bytes.Buffer
+	renderTable(&buf, rows)
+	return buf.String()
+}
 
-	rows := make([]row, 0, len(frames))
+// displayRows returns one row per configured native frame in stable order.
+// Missing frames use placeholders so the table height does not change on refresh.
+func displayRows(frames []data.Frame, rows []row) []row {
+	byFrame := make(map[string]row, len(rows))
+	for _, r := range rows {
+		byFrame[r.Frame] = r
+	}
+	naStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	na := naStyle.Render("—")
+	out := make([]row, 0, len(frames))
 	for _, f := range frames {
 		if !polymarket.HasNativeSlug(f) {
 			continue
 		}
-		if r, ok := fetchRow(ctx, collector, *market, *binanceMarket, f, current, currentErr); ok {
+		name := f.String()
+		if r, ok := byFrame[name]; ok {
+			out = append(out, r)
+			continue
+		}
+		out = append(out, row{
+			Frame:          name,
+			Prob:           na,
+			WindowStart:    na,
+			StartBTC:       na,
+			CurrentDiff:    na,
+			TargetBTC:      na,
+			TargetDiff:     na,
+			WindowEnd:      na,
+			WindowEndInMin: na,
+		})
+	}
+	return out
+}
+
+func nativeFrameCount(frames []data.Frame) int {
+	n := 0
+	for _, f := range frames {
+		if polymarket.HasNativeSlug(f) {
+			n++
+		}
+	}
+	return n
+}
+
+func loadRows(ctx context.Context, cfg appConfig, collector *polymarket.Collector) ([]row, error) {
+	current, currentErr := fetchCurrentBTC(ctx, cfg.binanceMarket)
+	rows := make([]row, 0, len(cfg.frames))
+	for _, f := range cfg.frames {
+		if !polymarket.HasNativeSlug(f) {
+			continue
+		}
+		if r, ok := fetchRow(ctx, collector, cfg.market, cfg.binanceMarket, f, current, currentErr); ok {
 			rows = append(rows, r)
 		}
 	}
-
-	renderTable(os.Stdout, rows)
+	return rows, nil
 }
 
 func fetchRow(ctx context.Context, collector *polymarket.Collector, market, binanceMarket string, frame data.Frame, current float64, currentErr error) (row, bool) {
@@ -72,6 +174,8 @@ func fetchRow(ctx context.Context, collector *polymarket.Collector, market, bina
 	}
 	s := snaps[len(snaps)-1]
 	r := row{Frame: frame.String()}
+	r.UpProbPct = s.UpPrice * 100
+	r.ProbDiffPct = (s.UpPrice - s.DownPrice) * 100
 	r.Prob = formatUpDownProb(s.UpPrice, s.DownPrice)
 	r.WindowStart = s.WindowStart.UTC().Format("2006-01-02 15:04:05")
 	r.WindowEnd = s.WindowEnd.UTC().Format("2006-01-02 15:04:05")
@@ -82,6 +186,9 @@ func fetchRow(ctx context.Context, collector *polymarket.Collector, market, bina
 		r.StartBTC = fmt.Sprintf("%.2f", ref)
 		if currentErr == nil {
 			r.CurrentDiff = priceDiffFromStart(ref, current)
+			if ref > 0 {
+				r.CurrentDiffPct = (ref - current) / ref * 100
+			}
 		}
 		sigma, volErr := fetchRealizedVol(ctx, binanceMarket, frame.String(), s.WindowStart, 100)
 		if volErr == nil && sigma > 0 {
@@ -96,9 +203,9 @@ func fetchRow(ctx context.Context, collector *polymarket.Collector, market, bina
 
 func formatUpDownProb(up, down float64) string {
 	if down > up {
-		return fmt.Sprintf("Down %.2f%%", down*100)
+		return probDownStyle.Render(fmt.Sprintf("Down %.2f%%", down*100))
 	}
-	return fmt.Sprintf("Up %.2f%%", up*100)
+	return probUpStyle.Render(fmt.Sprintf("Up %.2f%%", up*100))
 }
 
 // priceDiffFromStart formats (start - other) as absolute USD and percent of start.
@@ -264,8 +371,16 @@ func parseFrames(s string) ([]data.Frame, error) {
 	return out, nil
 }
 
+func shortErr(err error) string {
+	msg := err.Error()
+	if len(msg) > 60 {
+		msg = msg[:57] + "..."
+	}
+	return msg
+}
+
 // renderTable prints a DuckDB-CLI-style box table with header types.
-func renderTable(w *os.File, rows []row) {
+func renderTable(w io.Writer, rows []row) {
 	headers := []string{"frame", "prob", "window_start_utc", "start_btc", "current_diff", "target_btc", "target_diff", "window_end_utc", "window_end_in_mins"}
 	cells := make([][]string, 0, len(rows))
 	for _, r := range rows {
@@ -281,8 +396,9 @@ func renderTable(w *os.File, rows []row) {
 	}
 	for _, c := range cells {
 		for i, v := range c {
-			if len(v) > widths[i] {
-				widths[i] = len(v)
+			w := lipgloss.Width(v)
+			if w > widths[i] {
+				widths[i] = w
 			}
 		}
 	}
@@ -313,7 +429,13 @@ func dataLine(values []string, widths []int) string {
 	var b strings.Builder
 	b.WriteString("│")
 	for i, v := range values {
-		fmt.Fprintf(&b, " %-*s ", widths[i], v)
+		pad := widths[i] - lipgloss.Width(v)
+		if pad < 0 {
+			pad = 0
+		}
+		b.WriteString(" ")
+		b.WriteString(v)
+		b.WriteString(strings.Repeat(" ", pad+1))
 		b.WriteString("│")
 	}
 	return b.String()
