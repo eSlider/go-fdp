@@ -395,34 +395,37 @@ func (m *chartsModel) chartInteract(msg tea.Msg) {
 	m.SetFocused(true)
 	updated, _ := m.chart.Update(msg)
 	m.chart = updated
+	resyncChartView(&m.chart)
 	redrawKlineCandles(&m.chart)
 }
 
-// chartWheel applies zoom or switches frame when gaps exceed chartFrameSwitchEmptyBars.
+// chartWheel zooms the viewport, or switches frame when bars are too sparse in view.
 func (m chartsModel) chartWheel(zoomIn bool) (chartsModel, tea.Cmd) {
 	m.SetFocused(true)
 	if len(m.klines) == 0 {
 		return m, nil
 	}
-	gaps := maxEmptyBarsInView(m.klines, m.chart.ViewMinX(), m.chart.ViewMaxX(), m.panSeconds())
-	if gaps > chartFrameSwitchEmptyBars {
-		m.savedViewMin = time.UnixMilli(int64(math.Round(m.chart.ViewMinX() * 1000))).UTC()
-		m.savedViewMax = time.UnixMilli(int64(math.Round(m.chart.ViewMaxX() * 1000))).UTC()
-		m.restoreViewAfterLoad = true
-		if zoomIn && m.frameIdx > 0 {
-			m.frameUp()
-			m.loading = true
-			return m, m.fetchCmd()
-		}
-		if !zoomIn && m.frameIdx < len(chartFrames)-1 {
-			m.frameDown()
-			m.loading = true
-			return m, m.fetchCmd()
-		}
-		m.restoreViewAfterLoad = false
-	}
+
 	chartZoomX(&m.chart, zoomIn, m.panSeconds())
 	redrawKlineCandles(&m.chart)
+
+	gaps := maxEmptyBarsInView(m.klines, m.chart.ViewMinX(), m.chart.ViewMaxX(), m.panSeconds())
+	if gaps <= chartFrameSwitchEmptyBars {
+		return m, nil
+	}
+
+	m.savedViewMin = time.UnixMilli(int64(math.Round(m.chart.ViewMinX() * 1000))).UTC()
+	m.savedViewMax = time.UnixMilli(int64(math.Round(m.chart.ViewMaxX() * 1000))).UTC()
+	m.restoreViewAfterLoad = true
+	if zoomIn && m.frameIdx > 0 {
+		m.frameUp()
+		return m, m.fetchCmd()
+	}
+	if !zoomIn && m.frameIdx < len(chartFrames)-1 {
+		m.frameDown()
+		return m, m.fetchCmd()
+	}
+	m.restoreViewAfterLoad = false
 	return m, nil
 }
 
@@ -527,6 +530,8 @@ func (m chartsModel) HandleMouse(msg tea.Msg) (chartsModel, bool, tea.Cmd) {
 			viewMinX: m.chart.ViewMinX(),
 			viewMaxX: m.chart.ViewMaxX(),
 		}
+		resyncChartView(&m.chart)
+		redrawKlineCandles(&m.chart)
 		return m, true, m.dragPollCmd()
 
 	case tea.MouseMotionMsg:

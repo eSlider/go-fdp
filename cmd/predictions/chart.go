@@ -147,6 +147,18 @@ func maxEmptyBarsInView(klines []*binance.Kline, viewMinX, viewMaxX, barSec floa
 	return maxGap
 }
 
+// resyncChartView rescales datasets after the viewport changes (required before redraw).
+func resyncChartView(m *timeserieslinechart.Model) {
+	vmin, vmax := m.ViewMinX(), m.ViewMaxX()
+	if vmax <= vmin {
+		return
+	}
+	m.SetViewTimeRange(
+		time.UnixMilli(int64(math.Round(vmin*1000))),
+		time.UnixMilli(int64(math.Round(vmax*1000))),
+	)
+}
+
 func chartZoomX(m *timeserieslinechart.Model, zoomIn bool, stepSec float64) {
 	if stepSec < 1 {
 		stepSec = 60
@@ -156,6 +168,7 @@ func chartZoomX(m *timeserieslinechart.Model, zoomIn bool, stepSec float64) {
 	} else {
 		m.Model.ZoomOut(stepSec, 0)
 	}
+	resyncChartView(m)
 }
 
 func newBinanceChart(w, h int, panSec float64, zm *zone.Manager) timeserieslinechart.Model {
@@ -278,7 +291,10 @@ func scrollKlineViewToEnd(m *timeserieslinechart.Model, klines []*binance.Kline,
 	if start < minX {
 		start = minX
 	}
-	m.SetViewXRange(start, end)
+	m.SetViewTimeRange(
+		time.UnixMilli(int64(math.Round(start*1000))),
+		time.UnixMilli(int64(math.Round(end*1000))),
+	)
 }
 
 func syncKlineChart(m *timeserieslinechart.Model, klines []*binance.Kline, opts klineChartOpts) {
@@ -316,10 +332,15 @@ func syncKlineChart(m *timeserieslinechart.Model, klines []*binance.Kline, opts 
 	redrawKlineCandles(m)
 
 	if keepView {
-		m.SetViewXRange(viewMinX, viewMaxX)
 		m.SetViewYRange(viewMinY, viewMaxY)
+		m.SetViewTimeRange(
+			time.UnixMilli(int64(math.Round(viewMinX*1000))),
+			time.UnixMilli(int64(math.Round(viewMaxX*1000))),
+		)
+		redrawKlineCandles(m)
 	} else if opts.scrollToEnd {
 		scrollKlineViewToEnd(m, klines, opts.barDuration)
+		redrawKlineCandles(m)
 	}
 }
 
