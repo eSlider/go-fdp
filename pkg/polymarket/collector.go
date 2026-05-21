@@ -2,6 +2,7 @@ package polymarket
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
 
@@ -60,7 +61,7 @@ func (c *Collector) backfillDay(ctx context.Context, asset Asset, from, to time.
 		}
 		snaps, err := c.fetchWindow(ctx, asset.Frame, w)
 		if err != nil {
-			if err == ErrNotFound {
+			if errors.Is(err, ErrNotFound) {
 				continue
 			}
 			return err
@@ -79,15 +80,13 @@ func (c *Collector) backfillDay(ctx context.Context, asset Asset, from, to time.
 }
 
 func (c *Collector) fetchWindow(ctx context.Context, frame data.Frame, windowStart time.Time) ([]Snapshot, error) {
+	if !HasNativeSlug(frame) {
+		return nil, ErrNotFound
+	}
 	slug := SlugForWindow(frame, windowStart)
 	ev, err := c.client.FetchEventBySlug(ctx, slug)
 	if err != nil {
-		if frame == data.FifteenMin {
-			ev, err = c.client.FetchEventBySlug(ctx, SlugForWindow(data.FiveMinute, windowStart))
-		}
-		if err != nil {
-			return nil, err
-		}
+		return nil, err
 	}
 	winEnd := windowStart.Add(NativeFrameDuration(frame))
 	if !ev.WindowEnd.IsZero() {
@@ -99,12 +98,12 @@ func (c *Collector) fetchWindow(ctx context.Context, frame data.Frame, windowSta
 	}
 	snaps := historyToSnapshots(ev, history)
 	if len(snaps) == 0 && ev.UpTokenID != "" {
-		if p, err := c.client.FetchPrice(ctx, ev.UpTokenID); err == nil {
+		if up, down, err := c.livePrices(ctx, ev); err == nil {
 			now := time.Now().UTC()
 			snaps = []Snapshot{{
 				Time:        now,
-				UpPrice:     p,
-				DownPrice:   1 - p,
+				UpPrice:     up,
+				DownPrice:   down,
 				EventSlug:   ev.Slug,
 				ConditionID: ev.ConditionID,
 				WindowStart: windowStart,
@@ -119,29 +118,30 @@ func (c *Collector) fetchWindow(ctx context.Context, frame data.Frame, windowSta
 	return snaps, nil
 }
 
-// FetchCurrentSnapshot resolves the active window and returns a live price snapshot.
-// For frames without a native Polymarket window (1m/1h/4h or when the native
-// slug 404s), the enclosing 5m or 15m event is used as a proxy.
+// FetchCurrentSnapshot resolves the active native Polymarket window and returns a live snapshot.
 func (c *Collector) FetchCurrentSnapshot(ctx context.Context, market string, frame data.Frame) ([]Snapshot, error) {
 	_ = market
+	if !HasNativeSlug(frame) {
+		return nil, ErrNotFound
+	}
 	now := time.Now().UTC()
 	ws := AlignWindowStart(now, frame)
-	ev, fallback, err := c.resolveCurrentEvent(ctx, frame, ws, now)
+	ev, err := c.client.FetchEventBySlug(ctx, SlugForWindow(frame, ws))
 	if err != nil {
 		return nil, err
 	}
-	up, err := c.client.FetchPrice(ctx, ev.UpTokenID)
+	up, down, err := c.livePrices(ctx, ev)
 	if err != nil {
 		return nil, err
 	}
 	winEnd := ws.Add(NativeFrameDuration(frame))
-	if !ev.WindowEnd.IsZero() && !fallback {
+	if !ev.WindowEnd.IsZero() {
 		winEnd = ev.WindowEnd
 	}
 	return []Snapshot{{
 		Time:        now,
 		UpPrice:     up,
-		DownPrice:   1 - up,
+		DownPrice:   down,
 		EventSlug:   ev.Slug,
 		ConditionID: ev.ConditionID,
 		WindowStart: ws,
@@ -149,29 +149,17 @@ func (c *Collector) FetchCurrentSnapshot(ctx context.Context, market string, fra
 	}}, nil
 }
 
-// resolveCurrentEvent tries the native slug for frame, falling back to 15m
-// then 5m events that enclose now.
-func (c *Collector) resolveCurrentEvent(ctx context.Context, frame data.Frame, ws, now time.Time) (*ResolvedEvent, bool, error) {
-	ev, err := c.client.FetchEventBySlug(ctx, SlugForWindow(frame, ws))
-	if err == nil {
-		return ev, false, nil
+// livePrices returns implied Up/Down probabilities, preferring Gamma outcomePrices
+// over the noisy CLOB midpoint for the Up token alone.
+func (c *Collector) livePrices(ctx context.Context, ev *ResolvedEvent) (float64, float64, error) {
+	if ev.HasOutcomePrices() {
+		return ev.OutcomeUp, ev.OutcomeDown, nil
 	}
-	if err != ErrNotFound {
-		return nil, false, err
+	up, err := c.client.FetchPrice(ctx, ev.UpTokenID)
+	if err != nil {
+		return 0, 0, err
 	}
-	for _, fb := range []data.Frame{data.FifteenMin, data.FiveMinute} {
-		if fb == frame {
-			continue
-		}
-		ev, err = c.client.FetchEventBySlug(ctx, SlugForWindow(fb, AlignWindowStart(now, fb)))
-		if err == nil {
-			return ev, true, nil
-		}
-		if err != ErrNotFound {
-			return nil, false, err
-		}
-	}
-	return nil, false, ErrNotFound
+	return up, 1 - up, nil
 }
 
 func truncateDay(t time.Time) time.Time {

@@ -20,6 +20,13 @@ func TestSlugForWindow_5m(t *testing.T) {
 	assert.Equal(t, "btc-updown-5m-1775181000", slug)
 }
 
+func TestHasNativeSlug(t *testing.T) {
+	assert.True(t, HasNativeSlug(data.FiveMinute))
+	assert.True(t, HasNativeSlug(data.FifteenMin))
+	assert.True(t, HasNativeSlug(4*data.Hour))
+	assert.False(t, HasNativeSlug(data.Minute))
+}
+
 func TestSlugForWindow_15m(t *testing.T) {
 	ws := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 	slug := SlugForWindow(data.FifteenMin, ws)

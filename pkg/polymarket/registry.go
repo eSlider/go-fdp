@@ -7,13 +7,24 @@ import (
 	"github.com/eslider/go-fdp/pkg/data"
 )
 
-// AllFrames are prediction frames supported by the poller and API.
-var AllFrames = []data.Frame{
-	data.Minute,
+// NativeFrames are frames with their own Polymarket btc-updown event slug (no alias/fallback).
+var NativeFrames = []data.Frame{
 	data.FiveMinute,
 	data.FifteenMin,
-	data.Hour,
 	4 * data.Hour,
+}
+
+// AllFrames are prediction frames used by the poller and live snapshot APIs.
+var AllFrames = NativeFrames
+
+// HasNativeSlug reports whether frame has a dedicated Polymarket event slug.
+func HasNativeSlug(frame data.Frame) bool {
+	switch frame {
+	case data.FiveMinute, data.FifteenMin, data.Hour, 4 * data.Hour:
+		return true
+	default:
+		return false
+	}
 }
 
 // AlignWindowStart returns UTC window start for frame-aligned slug epochs.

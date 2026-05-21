@@ -97,4 +97,12 @@ type ResolvedEvent struct {
 	DownTokenID string
 	WindowStart time.Time
 	WindowEnd   time.Time
+	// OutcomeUp/OutcomeDown are implied probabilities from Gamma outcomePrices (0 = unset).
+	OutcomeUp   float64
+	OutcomeDown float64
+}
+
+// HasOutcomePrices reports whether Gamma outcomePrices were parsed.
+func (ev *ResolvedEvent) HasOutcomePrices() bool {
+	return ev.OutcomeUp > 0 && ev.OutcomeDown > 0
 }

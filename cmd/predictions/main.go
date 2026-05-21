@@ -20,7 +20,7 @@ import (
 
 type row struct {
 	Frame          string
-	ProbDiff       string
+	Prob           string
 	WindowStart    string
 	StartBTC       string
 	CurrentDiff    string
@@ -28,13 +28,12 @@ type row struct {
 	TargetDiff     string
 	WindowEnd      string
 	WindowEndInMin string
-	Note           string
 }
 
 func main() {
 	market := flag.String("market", polymarket.DefaultMarket, "polymarket symbol")
 	binanceMarket := flag.String("binance-market", "BTCUSDT", "Binance symbol for reference price")
-	frameList := flag.String("frames", "1m,5m,15m,1h,4h", "comma-separated frames to query")
+	frameList := flag.String("frames", "5m,15m,4h", "comma-separated native Polymarket frames (5m, 15m, 4h)")
 	timeout := flag.Duration("timeout", 30*time.Second, "request timeout")
 	flag.Parse()
 
@@ -55,41 +54,35 @@ func main() {
 
 	rows := make([]row, 0, len(frames))
 	for _, f := range frames {
-		rows = append(rows, fetchRow(ctx, collector, *market, *binanceMarket, f, current, currentErr))
+		if !polymarket.HasNativeSlug(f) {
+			continue
+		}
+		if r, ok := fetchRow(ctx, collector, *market, *binanceMarket, f, current, currentErr); ok {
+			rows = append(rows, r)
+		}
 	}
 
 	renderTable(os.Stdout, rows)
 }
 
-func fetchRow(ctx context.Context, collector *polymarket.Collector, market, binanceMarket string, frame data.Frame, current float64, currentErr error) row {
-	r := row{Frame: frame.String()}
+func fetchRow(ctx context.Context, collector *polymarket.Collector, market, binanceMarket string, frame data.Frame, current float64, currentErr error) (row, bool) {
 	snaps, err := collector.FetchCurrentSnapshot(ctx, market, frame)
-	if err != nil {
-		r.Note = shortErr(err)
-		return r
-	}
-	if len(snaps) == 0 {
-		r.Note = "no snapshot"
-		return r
+	if err != nil || len(snaps) == 0 {
+		return row{}, false
 	}
 	s := snaps[len(snaps)-1]
-	r.ProbDiff = fmt.Sprintf("%+.2f%%", (s.UpPrice-s.DownPrice)*100)
+	r := row{Frame: frame.String()}
+	r.Prob = formatUpDownProb(s.UpPrice, s.DownPrice)
 	r.WindowStart = s.WindowStart.UTC().Format("2006-01-02 15:04:05")
 	r.WindowEnd = s.WindowEnd.UTC().Format("2006-01-02 15:04:05")
 	r.WindowEndInMin = fmt.Sprintf("%+.1f", time.Until(s.WindowEnd).Minutes())
 
 	ref, refErr := fetchOpenAt(ctx, binanceMarket, s.WindowStart)
-	if refErr != nil {
-		r.Note = "start: " + shortErr(refErr)
-	} else {
+	if refErr == nil {
 		r.StartBTC = fmt.Sprintf("%.2f", ref)
 		if currentErr == nil {
 			r.CurrentDiff = priceDiffFromStart(ref, current)
-		} else if r.Note == "" {
-			r.Note = "cur: " + shortErr(currentErr)
 		}
-		// Implied target at window_end via Polymarket probability + Binance realized vol:
-		//   target = start * exp(z(p_up) * sigma_recent)
 		sigma, volErr := fetchRealizedVol(ctx, binanceMarket, frame.String(), s.WindowStart, 100)
 		if volErr == nil && sigma > 0 {
 			z := normInvCDF(s.UpPrice)
@@ -98,7 +91,14 @@ func fetchRow(ctx context.Context, collector *polymarket.Collector, market, bina
 			r.TargetDiff = priceDiffFromStart(ref, target)
 		}
 	}
-	return r
+	return r, true
+}
+
+func formatUpDownProb(up, down float64) string {
+	if down > up {
+		return fmt.Sprintf("Down %.2f%%", down*100)
+	}
+	return fmt.Sprintf("Up %.2f%%", up*100)
 }
 
 // priceDiffFromStart formats (start - other) as absolute USD and percent of start.
@@ -264,23 +264,13 @@ func parseFrames(s string) ([]data.Frame, error) {
 	return out, nil
 }
 
-func shortErr(err error) string {
-	msg := err.Error()
-	if len(msg) > 60 {
-		msg = msg[:57] + "..."
-	}
-	return msg
-}
-
 // renderTable prints a DuckDB-CLI-style box table with header types.
 func renderTable(w *os.File, rows []row) {
-	headers := []string{"frame", "prob_diff", "window_start_utc", "start_btc", "current_diff", "target_btc", "target_diff", "window_end_utc", "window_end_in_mins"}
-	types := []string{"varchar", "double", "timestamp", "double", "varchar", "double", "varchar", "timestamp", "double"}
-
+	headers := []string{"frame", "prob", "window_start_utc", "start_btc", "current_diff", "target_btc", "target_diff", "window_end_utc", "window_end_in_mins"}
 	cells := make([][]string, 0, len(rows))
 	for _, r := range rows {
 		cells = append(cells, []string{
-			r.Frame, r.ProbDiff,
+			r.Frame, r.Prob,
 			r.WindowStart, r.StartBTC, r.CurrentDiff, r.TargetBTC, r.TargetDiff, r.WindowEnd, r.WindowEndInMin,
 		})
 	}
@@ -288,9 +278,6 @@ func renderTable(w *os.File, rows []row) {
 	widths := make([]int, len(headers))
 	for i, h := range headers {
 		widths[i] = len(h)
-		if len(types[i]) > widths[i] {
-			widths[i] = len(types[i])
-		}
 	}
 	for _, c := range cells {
 		for i, v := range c {
@@ -302,20 +289,11 @@ func renderTable(w *os.File, rows []row) {
 
 	fmt.Fprintln(w, line("┌", "┬", "┐", widths))
 	fmt.Fprintln(w, dataLine(headers, widths))
-	fmt.Fprintln(w, dataLine(types, widths))
 	fmt.Fprintln(w, line("├", "┼", "┤", widths))
 	for _, c := range cells {
 		fmt.Fprintln(w, dataLine(c, widths))
 	}
 	fmt.Fprintln(w, line("└", "┴", "┘", widths))
-	fmt.Fprintf(w, "%d row%s\n", len(rows), plural(len(rows)))
-}
-
-func plural(n int) string {
-	if n == 1 {
-		return ""
-	}
-	return "s"
 }
 
 func line(l, m, r string, widths []int) string {

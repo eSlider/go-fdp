@@ -13,13 +13,13 @@ Pairs with [go-trade](https://github.com/eSlider/go-trade) for a unified cross-e
 
 Package reference (godoc): **[pkg.go.dev/github.com/eslider/go-fdp](https://pkg.go.dev/github.com/eslider/go-fdp)**
 
-| Package | Description |
-| --- | --- |
-| [pkg/binance](https://pkg.go.dev/github.com/eslider/go-fdp/pkg/binance) | Binance S3 ETL, live hourly Parquet, REST client |
-| [pkg/etl](https://pkg.go.dev/github.com/eslider/go-fdp/pkg/etl) | Multi-source bulk/live router |
-| [pkg/data](https://pkg.go.dev/github.com/eslider/go-fdp/pkg/data) | Parquet, CSV, shared types |
-| [pkg/gapfill](https://pkg.go.dev/github.com/eslider/go-fdp/pkg/gapfill) | Lazy gap repair on read |
-| [pkg/integrity](https://pkg.go.dev/github.com/eslider/go-fdp/pkg/integrity) | Parquet audits and policies |
+| Package                                                                     | Description                                      |
+| --------------------------------------------------------------------------- | ------------------------------------------------ |
+| [pkg/binance](https://pkg.go.dev/github.com/eslider/go-fdp/pkg/binance)     | Binance S3 ETL, live hourly Parquet, REST client |
+| [pkg/etl](https://pkg.go.dev/github.com/eslider/go-fdp/pkg/etl)             | Multi-source bulk/live router                    |
+| [pkg/data](https://pkg.go.dev/github.com/eslider/go-fdp/pkg/data)           | Parquet, CSV, shared types                       |
+| [pkg/gapfill](https://pkg.go.dev/github.com/eslider/go-fdp/pkg/gapfill)     | Lazy gap repair on read                          |
+| [pkg/integrity](https://pkg.go.dev/github.com/eslider/go-fdp/pkg/integrity) | Parquet audits and policies                      |
 
 The former module path `github.com/eslider/go-binance-fdp` redirects here after the rename.
 
@@ -83,16 +83,16 @@ graph LR
 
 ## Features
 
-| Feature | Description |
-| --- | --- |
-| **Historical klines** | Daily/monthly ZIPs from Binance Vision → Parquet |
-| **Aggregate trades** | Spot aggTrades with hourly Parquet for recent data |
-| **ETL on demand** | Downloads and transforms only missing partitions |
-| **DuckDB cache** | Fast range queries over local Parquet |
-| **Lazy gap repair** | Count-first audit + repair on API read (`pkg/gapfill`, `pkg/integrity`) |
-| **Live gap fill** | Current-day klines via Binance REST (`pkg/binance`) |
-| **REST API** | Gzip-enabled JSON endpoints |
-| **Observability** | Optional Grafana + Loki + Promtail via Docker Compose |
+| Feature               | Description                                                             |
+| --------------------- | ----------------------------------------------------------------------- |
+| **Historical klines** | Daily/monthly ZIPs from Binance Vision → Parquet                        |
+| **Aggregate trades**  | Spot aggTrades with hourly Parquet for recent data                      |
+| **ETL on demand**     | Downloads and transforms only missing partitions                        |
+| **DuckDB cache**      | Fast range queries over local Parquet                                   |
+| **Lazy gap repair**   | Count-first audit + repair on API read (`pkg/gapfill`, `pkg/integrity`) |
+| **Live gap fill**     | Current-day klines via Binance REST (`pkg/binance`)                     |
+| **REST API**          | Gzip-enabled JSON endpoints                                             |
+| **Observability**     | Optional Grafana + Loki + Promtail via Docker Compose                   |
 
 ## Requirements
 
@@ -214,27 +214,27 @@ sequenceDiagram
 
 Historical OHLCV candles (klines).
 
-| Query | Required | Default | Description |
-| --- | --- | --- | --- |
-| `from` | yes | — | Start time (Unix ms) |
-| `to` | yes | — | End time (Unix ms) |
-| `market` | yes | — | Symbol, e.g. `BTCUSDT` |
-| `exchange` | no | `binance` | Exchange id |
-| `marketType` | no | `spot` | `spot`, `futures`, `options` |
-| `frame` | no | `1m` | `1s`, `1m`, `5m`, `1h`, `1d`, … |
-| `indicator` | no | `klines` | `klines` |
+| Query        | Required | Default   | Description                     |
+| ------------ | -------- | --------- | ------------------------------- |
+| `from`       | yes      | —         | Start time (Unix ms)            |
+| `to`         | yes      | —         | End time (Unix ms)              |
+| `market`     | yes      | —         | Symbol, e.g. `BTCUSDT`          |
+| `exchange`   | no       | `binance` | Exchange id                     |
+| `marketType` | no       | `spot`    | `spot`, `futures`, `options`    |
+| `frame`      | no       | `1m`      | `1s`, `1m`, `5m`, `1h`, `1d`, … |
+| `indicator`  | no       | `klines`  | `klines`                        |
 
 ### `GET /v1/aggtrades`
 
 Compressed aggregate trades for a time range.
 
-| Query | Required | Default | Description |
-| --- | --- | --- | --- |
-| `from` | yes | — | Start time (Unix ms) |
-| `to` | yes | — | End time (Unix ms) |
-| `market` | yes | — | Symbol |
-| `exchange` | no | `binance` | Exchange id |
-| `marketType` | no | `spot` | Market type |
+| Query        | Required | Default   | Description          |
+| ------------ | -------- | --------- | -------------------- |
+| `from`       | yes      | —         | Start time (Unix ms) |
+| `to`         | yes      | —         | End time (Unix ms)   |
+| `market`     | yes      | —         | Symbol               |
+| `exchange`   | no       | `binance` | Exchange id          |
+| `marketType` | no       | `spot`    | Market type          |
 
 ### `GET /v1/markets` · `GET /v1/symbols`
 
@@ -244,13 +244,13 @@ List known markets and tradable symbols (from cached metadata).
 
 Polymarket BTC Up/Down implied probability history (Hive Parquet cache, lazy CLOB backfill).
 
-| Query | Required | Default | Description |
-| --- | --- | --- | --- |
-| `from` | yes | — | Start time (Unix ms) |
-| `to` | yes | — | End time (Unix ms) |
-| `market` | no | `BTCUSDT` | Normalized symbol |
-| `exchange` | no | `polymarket` | Source id |
-| `frame` | no | `5m` | `1m`, `5m`, `15m`, `1h`, `4h` |
+| Query      | Required | Default      | Description                   |
+| ---------- | -------- | ------------ | ----------------------------- |
+| `from`     | yes      | —            | Start time (Unix ms)          |
+| `to`       | yes      | —            | End time (Unix ms)            |
+| `market`   | no       | `BTCUSDT`    | Normalized symbol             |
+| `exchange` | no       | `polymarket` | Source id                     |
+| `frame`    | no       | `5m`         | `1m`, `5m`, `15m`, `1h`, `4h` |
 
 ```bash
 curl -G 'http://localhost:8082/v1/predictions' \
@@ -361,17 +361,17 @@ Tests use real parquet fixtures and optional live Binance calls — no generated
 
 No secrets are required for Binance Vision (anonymous S3) or public REST market data endpoints.
 
-| Path / setting | Description |
-| --- | --- |
-| `./data/` | Parquet cache root (created at runtime) |
-| `-port` | HTTP listen port (default `8082`) |
+| Path / setting | Description                             |
+| -------------- | --------------------------------------- |
+| `./data/`      | Parquet cache root (created at runtime) |
+| `-port`        | HTTP listen port (default `8082`)       |
 
 ## Related Projects
 
-| Project | Description |
-| --- | --- |
-| [go-trade](https://github.com/eSlider/go-trade) | Unified candles, trades, and instruments across exchanges |
-| [go-onlyoffice](https://github.com/eSlider/go-onlyoffice) | OnlyOffice PM API client |
+| Project                                                   | Description                                               |
+| --------------------------------------------------------- | --------------------------------------------------------- |
+| [go-trade](https://github.com/eSlider/go-trade)           | Unified candles, trades, and instruments across exchanges |
+| [go-onlyoffice](https://github.com/eSlider/go-onlyoffice) | OnlyOffice PM API client                                  |
 
 ## License
 

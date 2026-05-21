@@ -4,13 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"net/url"
-	"time"
+	"strconv"
 )
 
 type gammaEvent struct {
 	Slug      string        `json:"slug"`
-	StartDate string        `json:"startDate"`
-	EndDate   string        `json:"endDate"`
+	StartDate Time          `json:"startDate"`
+	EndDate   Time          `json:"endDate"`
 	Markets   []gammaMarket `json:"markets"`
 }
 
@@ -19,7 +19,7 @@ type gammaMarket struct {
 	ClobTokenIds  string `json:"clobTokenIds"`
 	Outcomes      string `json:"outcomes"`
 	OutcomePrices string `json:"outcomePrices"`
-	EndDate       string `json:"endDate"`
+	EndDate       Time   `json:"endDate"`
 }
 
 // FetchEventBySlug loads event metadata from Gamma API.
@@ -60,32 +60,45 @@ func parseResolvedEvent(ev *gammaEvent) (*ResolvedEvent, error) {
 		return nil, ErrNotFound
 	}
 
-	ws := parseTime(ev.StartDate)
-	we := parseTime(m.EndDate)
+	ws := ev.StartDate.Time()
+	we := m.EndDate.Time()
 	if we.IsZero() {
-		we = parseTime(ev.EndDate)
+		we = ev.EndDate.Time()
 	}
 
-	return &ResolvedEvent{
+	out := &ResolvedEvent{
 		Slug:        ev.Slug,
 		ConditionID: m.ConditionID,
 		UpTokenID:   tokenIDs[upIdx],
 		DownTokenID: tokenIDs[downIdx],
 		WindowStart: ws,
 		WindowEnd:   we,
-	}, nil
+	}
+	if up, down, ok := parseOutcomePrices(m.OutcomePrices, upIdx, downIdx); ok {
+		out.OutcomeUp = up
+		out.OutcomeDown = down
+	}
+	return out, nil
 }
 
-func parseTime(s string) time.Time {
-	if s == "" {
-		return time.Time{}
+func parseOutcomePrices(raw string, upIdx, downIdx int) (float64, float64, bool) {
+	if raw == "" {
+		return 0, 0, false
 	}
-	t, err := time.Parse(time.RFC3339, s)
-	if err != nil {
-		t, err = time.Parse(time.RFC3339Nano, s)
+	var prices []string
+	if err := json.Unmarshal([]byte(raw), &prices); err != nil {
+		return 0, 0, false
 	}
-	if err != nil {
-		return time.Time{}
+	if upIdx >= len(prices) || downIdx >= len(prices) {
+		return 0, 0, false
 	}
-	return t.UTC()
+	up, err := strconv.ParseFloat(prices[upIdx], 64)
+	if err != nil || up < 0 || up > 1 {
+		return 0, 0, false
+	}
+	down, err := strconv.ParseFloat(prices[downIdx], 64)
+	if err != nil || down < 0 || down > 1 {
+		return 0, 0, false
+	}
+	return up, down, true
 }
