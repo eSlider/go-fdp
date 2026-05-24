@@ -6,13 +6,13 @@ import (
 	"math"
 	"time"
 
+	"charm.land/bubbles/v2/key"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/NimbleMarkets/ntcharts/v2/linechart/timeserieslinechart"
-	zone "github.com/lrstanley/bubblezone/v2"
 	"github.com/eslider/go-fdp/pkg/binance"
 	"github.com/eslider/go-fdp/pkg/data"
-	tea "charm.land/bubbletea/v2"
-	"charm.land/bubbles/v2/key"
-	"charm.land/lipgloss/v2"
+	zone "github.com/lrstanley/bubblezone/v2"
 )
 
 var (
@@ -94,7 +94,7 @@ func (m *chartsModel) Init() tea.Cmd {
 }
 
 func (m *chartsModel) tickCmd() tea.Cmd {
-	return tea.Tick(time.Second, func(time.Time) tea.Msg { return tickMsg{} })
+	return tea.Tick(time.Second, func(time.Time) tea.Msg { return chartsTickMsg{} })
 }
 
 func (m chartsModel) IsFocused() bool {
@@ -216,16 +216,13 @@ func (m *chartsModel) resize(w, h int) {
 
 func (m chartsModel) fetchCmd() tea.Cmd {
 	symbol := m.market()
-	interval := m.frame().String()
+	frame := m.frame()
+	cfg := m.cfg
 	timeout := m.cfg.timeout
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
-		klines, err := binance.FetchKlines(ctx, &binance.KlineRequest{
-			Base:     binance.SymbolRequest{Symbol: symbol},
-			Interval: interval,
-			Limit:    500,
-		})
+		klines, err := fetchChartKlines(ctx, cfg, symbol, frame)
 		return binanceKlinesMsg{klines: klines, err: err}
 	}
 }
@@ -294,8 +291,8 @@ func (m *chartsModel) reloadChart(scrollToEnd bool) {
 		return
 	}
 	syncKlineChart(&m.chart, m.klines, klineChartOpts{
-		scrollToEnd:  scrollToEnd,
-		barDuration:  m.barDuration(),
+		scrollToEnd: scrollToEnd,
+		barDuration: m.barDuration(),
 	})
 	if m.focused {
 		chartFocus(&m.chart)
@@ -492,7 +489,7 @@ func (m chartsModel) Update(msg tea.Msg) (chartsModel, tea.Cmd) {
 			m.applyDragPan()
 			return m, m.dragPollCmd()
 		}
-	case tickMsg:
+	case chartsTickMsg:
 		cmds := []tea.Cmd{m.tickCmd()}
 		if !m.loading && m.errText == "" {
 			cmds = append(cmds, m.liveCmd())
@@ -503,7 +500,7 @@ func (m chartsModel) Update(msg tea.Msg) (chartsModel, tea.Cmd) {
 }
 
 func (m chartsModel) HandleMouse(msg tea.Msg) (chartsModel, bool, tea.Cmd) {
-	if m.chart.ZoneID() == "" || len(m.klines) == 0 {
+	if len(m.klines) == 0 {
 		return m, false, nil
 	}
 	mouse, ok := msg.(tea.MouseMsg)
@@ -588,10 +585,10 @@ func (m chartsModel) View(width int) string {
 		chartBody = lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render("  loading…")
 	} else if m.errText != "" {
 		chartBody = lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render("  " + m.errText)
-	} else if m.chart.ZoneID() != "" {
-		chartBody = chartBorderStyle.Width(m.chartW + 2).Render(m.chart.View())
+	} else if len(m.klines) == 0 {
+		chartBody = lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render("  no data (check fdp server or press r)")
 	} else {
-		chartBody = "  (no chart)"
+		chartBody = chartBorderStyle.Width(m.chartW + 2).Render(m.chart.View())
 	}
 	return lipgloss.JoinVertical(lipgloss.Left, toolbar, chartBody)
 }

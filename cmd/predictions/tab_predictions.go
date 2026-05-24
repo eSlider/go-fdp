@@ -9,32 +9,38 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/eslider/go-fdp/pkg/polymarket"
-	zone "github.com/lrstanley/bubblezone/v2"
 )
 
+const (
+	minRefreshInterval = 2 * time.Second
+	maxRefreshInterval = 2 * time.Minute
+)
+
+type predictionsTickMsg struct{}
+
 type predictionsModel struct {
-	cfg       appConfig
-	collector *polymarket.Collector
-	zone      *zone.Manager
-	rows      []row
-	history   frameHistory
-	charts    chartBoard
-	metric    chartMetric
-	status    string
-	lastAt    time.Time
-	width     int
-	height    int
+	cfg             appConfig
+	collector       *polymarket.Collector
+	rows            []row
+	status          string
+	lastAt          time.Time
+	refreshInterval time.Duration
+	fetching        bool
+	width           int
+	height          int
 }
 
-func newPredictionsModel(cfg appConfig, collector *polymarket.Collector, zm *zone.Manager) predictionsModel {
+func newPredictionsModel(cfg appConfig, collector *polymarket.Collector) predictionsModel {
+	interval := cfg.refresh
+	if interval < minRefreshInterval {
+		interval = minRefreshInterval
+	}
 	return predictionsModel{
-		cfg:       cfg,
-		collector: collector,
-		zone:      zm,
-		history:   make(frameHistory),
-		charts:    newChartBoard(metricUpProb, zm),
-		metric:    metricUpProb,
-		status:    "loading…",
+		cfg:             cfg,
+		collector:       collector,
+		status:          "loading…",
+		refreshInterval: interval,
+		fetching:        true,
 	}
 }
 
@@ -43,76 +49,37 @@ func (m *predictionsModel) Init() tea.Cmd {
 }
 
 func (m *predictionsModel) fetchCmd() tea.Cmd {
+	cfg := m.cfg
+	collector := m.collector
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), m.cfg.timeout)
+		ctx, cancel := context.WithTimeout(context.Background(), cfg.timeout)
 		defer cancel()
-		rows, err := loadRows(ctx, m.cfg, m.collector)
+		rows, err := loadRows(ctx, cfg, collector)
 		return fetchMsg{rows: rows, at: time.Now().UTC(), err: err}
 	}
 }
 
 func (m *predictionsModel) tickCmd() tea.Cmd {
-	return tea.Tick(m.cfg.refresh, func(time.Time) tea.Msg { return tickMsg{} })
+	return tea.Tick(m.refreshInterval, func(time.Time) tea.Msg { return predictionsTickMsg{} })
 }
 
 func (m predictionsModel) StatusText() string {
-	return m.status
+	return fmt.Sprintf("%s · refresh %s", m.status, m.refreshInterval.Round(time.Second))
 }
 
-func (m *predictionsModel) recordHistory(rows []row, at time.Time) {
-	for _, r := range rows {
-		m.history.appendPoint(r.Frame, historyPoint{
-			At:             at,
-			UpProbPct:      r.UpProbPct,
-			ProbDiffPct:    r.ProbDiffPct,
-			CurrentDiffPct: r.CurrentDiffPct,
-		})
+func (m *predictionsModel) adjustRefresh(delta time.Duration) {
+	next := m.refreshInterval + delta
+	if next < minRefreshInterval {
+		next = minRefreshInterval
 	}
-}
-
-func (m predictionsModel) frameOrder() []string {
-	out := make([]string, 0, len(m.cfg.frames))
-	for _, f := range m.cfg.frames {
-		if polymarket.HasNativeSlug(f) {
-			out = append(out, f.String())
-		}
+	if next > maxRefreshInterval {
+		next = maxRefreshInterval
 	}
-	return out
+	m.refreshInterval = next
 }
 
 func (m *predictionsModel) resize(w, h int) {
 	m.width, m.height = w, h
-	m.refreshCharts()
-}
-
-func (m *predictionsModel) refreshCharts() {
-	plotW, plotH := m.predPlotSize()
-	m.charts.metric = m.metric
-	m.charts.resize(plotW, plotH)
-	m.charts.sync(m.history, m.frameOrder())
-}
-
-func (m predictionsModel) predPlotSize() (int, int) {
-	plotW := m.width - 4
-	if plotW < 24 {
-		plotW = 24
-	}
-	frames := nativeFrameCount(m.cfg.frames)
-	if frames == 0 {
-		frames = 1
-	}
-	plotH := 6
-	rest := m.height - 8
-	if rest > 0 {
-		budget := rest / frames
-		if budget > plotH {
-			plotH = budget
-		}
-		if plotH > 10 {
-			plotH = 10
-		}
-	}
-	return plotW, plotH
 }
 
 func (m predictionsModel) Update(msg tea.Msg) (predictionsModel, tea.Cmd) {
@@ -120,39 +87,62 @@ func (m predictionsModel) Update(msg tea.Msg) (predictionsModel, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "r":
+			if m.fetching {
+				return m, nil
+			}
+			m.fetching = true
 			m.status = "refreshing…"
 			return m, m.fetchCmd()
-		case "1":
-			m.metric = metricUpProb
-			m.refreshCharts()
-		case "2":
-			m.metric = metricProbDiff
-			m.refreshCharts()
-		case "3":
-			m.metric = metricCurrentDiff
-			m.refreshCharts()
+		case "+", "=":
+			m.adjustRefresh(2 * time.Second)
+			m.status = fmt.Sprintf("refresh interval %s", m.refreshInterval.Round(time.Second))
+			return m, m.tickCmd()
+		case "-", "_":
+			m.adjustRefresh(-2 * time.Second)
+			m.status = fmt.Sprintf("refresh interval %s", m.refreshInterval.Round(time.Second))
+			return m, m.tickCmd()
 		}
+	case predictionsTickMsg:
+		if m.fetching {
+			return m, m.tickCmd()
+		}
+		m.fetching = true
+		return m, tea.Batch(m.fetchCmd(), m.tickCmd())
 	case fetchMsg:
+		m.fetching = false
 		m.lastAt = msg.at
 		if msg.err != nil {
 			m.status = "error: " + shortErr(msg.err)
 			return m, nil
 		}
 		m.rows = msg.rows
-		m.recordHistory(msg.rows, msg.at)
-		m.refreshCharts()
-		n := historySampleCount(m.history)
 		if len(m.rows) == 0 {
 			m.status = "no native frames"
 		} else {
-			m.status = fmt.Sprintf("updated %s UTC · %d samples", msg.at.Format("15:04:05"), n)
+			m.status = fmt.Sprintf("updated %s UTC", msg.at.Format("15:04:05"))
 		}
 	}
 	return m, nil
 }
 
-func (m predictionsModel) HandleMouse(msg tea.Msg) bool {
-	return m.charts.handleMouse(msg, m.history, m.frameOrder())
+func predictionMethodology() string {
+	return strings.TrimSpace(`
+Columns
+  frame              Polymarket window (5m / 15m / 4h native slug).
+  prob               Market-implied Up probability (Up price × 100). Green = Up favored; red = Down.
+  window_start_utc   Window open time (UTC).
+  start_btc          Binance 1m candle open at window_start (reference strike).
+  current_diff       start_btc − spot BTC now (USD and % of start).
+  target_btc         Strike implied by Up price under a log-normal move:
+                       target = start × exp(z × σ)
+                     z = Φ⁻¹(up_price); σ = stdev of log returns over the last 100 bars of the
+                     window frame interval ending at window_start (Binance klines).
+  target_diff        start_btc − target_btc (USD and %).
+  window_end_utc     Window close time (UTC).
+  window_end_in_mins Minutes until window_end (negative = closed).
+
+Data: Polymarket snapshots + Binance REST (1m open, frame klines for σ, latest 1m close).
+`)
 }
 
 func (m predictionsModel) View(width int) string {
@@ -161,14 +151,18 @@ func (m predictionsModel) View(width int) string {
 	}
 	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("205"))
 	helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243"))
+	annoStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Italic(true)
 
-	tableBody := renderTableString(displayRows(m.cfg.frames, m.rows))
-	charts := m.charts.render(m.frameOrder())
 	header := titleStyle.Render(fmt.Sprintf(
 		"Polymarket · %s · %s",
 		m.cfg.binanceMarket,
 		strings.Join(frameStrings(m.cfg.frames), ", "),
 	))
-	help := helpStyle.Render("r refresh · 1/2/3 metric · wheel zoom · drag pan")
-	return lipgloss.JoinVertical(lipgloss.Left, header, help, tableBody, "", charts)
+	help := helpStyle.Render(fmt.Sprintf(
+		"r refresh now · +/- interval (now %s) · tab charts",
+		m.refreshInterval.Round(time.Second),
+	))
+	annotation := annoStyle.Render(predictionMethodology())
+	tableBody := renderTableString(displayRows(m.cfg.frames, m.rows))
+	return lipgloss.JoinVertical(lipgloss.Left, header, help, "", annotation, "", tableBody)
 }

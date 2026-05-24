@@ -2,13 +2,13 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"flag"
 	"fmt"
-		"bytes"
-		"io"
-		"math"
+	"io"
+	"math"
 	"os"
 	"strings"
 	"time"
@@ -31,6 +31,7 @@ type appConfig struct {
 	frames        []data.Frame
 	timeout       time.Duration
 	refresh       time.Duration
+	fdpURL        string
 }
 
 type row struct {
@@ -54,10 +55,11 @@ func main() {
 	binanceMarket := flag.String("binance-market", "BTCUSDT", "Binance symbol for reference price")
 	frameList := flag.String("frames", "5m,15m,4h", "comma-separated native Polymarket frames (5m, 15m, 4h)")
 	timeout := flag.Duration("timeout", 30*time.Second, "per-request timeout")
-	refresh := flag.Duration("refresh", 5*time.Second, "TUI refresh interval")
+	refresh := flag.Duration("refresh", 10*time.Second, "TUI predictions table refresh interval (overridable with +/- in UI)")
+	fdpURL := flag.String("fdp-url", defaultFDPURL, "go-fdp base URL for charts tab (empty = Binance REST only)")
 	flag.Parse()
-	if *refresh < time.Second {
-		*refresh = 5 * time.Second
+	if *refresh < 2*time.Second {
+		*refresh = 10 * time.Second
 	}
 
 	frames, err := parseFrames(*frameList)
@@ -72,6 +74,7 @@ func main() {
 		frames:        frames,
 		timeout:       *timeout,
 		refresh:       *refresh,
+		fdpURL:        strings.TrimSpace(*fdpURL),
 	}
 
 	client := polymarket.NewClient()

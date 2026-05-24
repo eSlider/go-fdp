@@ -47,19 +47,20 @@ func (i *AssetETLInfo) Done() bool {
 type Frequency string
 
 const (
-	Monthly Frequency = "monthly"
-	Daily             = "daily"
+	Monthly Frequency = "monthly" // Monthly - trading with monthly settlement
+	Daily   Frequency = "daily"   // Daily - trading with daily settlement
 )
 
 type FutureType string
 
+// String - returns the string representation of the future type
 func (f FutureType) String() string {
 	return string(f)
 }
 
 const (
 	FutureTypeCm FutureType = "cm" // Case Management
-	FutureTypeUm            = "um" // Utilization Management
+	FutureTypeUm FutureType = "um" // Utilization Management
 )
 
 type FutureData string
@@ -92,8 +93,8 @@ type MarketType string
 
 const (
 	Spot    MarketType = "spot"    // Spot - trading with immediate settlement
-	Futures            = "futures" // Futures - trading with delayed settlement
-	Option             = "option"  // Option - trading with the right, but not the obligation to buy or sell
+	Futures MarketType = "futures" // Futures - trading with delayed settlement
+	Option  MarketType = "option"  // Option - trading with the right, but not the obligation to buy or sell
 )
 
 func (m MarketType) String() string {
