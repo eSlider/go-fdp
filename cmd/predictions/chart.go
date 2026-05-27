@@ -26,14 +26,31 @@ const (
 	dsClose = "close"
 )
 
+// Raw SGR (not 256/truecolor): green up, red down. Transform embeds codes so tmux/ASCII
+// profile cannot strip lipgloss ForegroundColor alone.
+const (
+	ansiCandleUp    = "\x1b[32m"
+	ansiCandleDown  = "\x1b[31m"
+	ansiCandleReset = "\x1b[0m"
+)
+
+func chartANSIStyle(color string) lipgloss.Style {
+	return lipgloss.NewStyle().Transform(func(s string) string {
+		if s == "" {
+			return s
+		}
+		return color + s + ansiCandleReset
+	})
+}
+
 var (
 	chartBorderStyle = lipgloss.NewStyle().
 				BorderStyle(lipgloss.NormalBorder()).
-				BorderForeground(lipgloss.Color("63"))
-	chartAxisStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
-	chartLabelStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
-	chartBullStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("10"))
-	chartBearStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
+				BorderForeground(lipgloss.Color("8"))
+	chartAxisStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
+	chartLabelStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
+	chartCandleUpStyle   = chartANSIStyle(ansiCandleUp)
+	chartCandleDownStyle = chartANSIStyle(ansiCandleDown)
 )
 
 // chartKeyboardHandler handles keys and wheel only; X-axis drag is implemented in tab_charts.
@@ -168,7 +185,7 @@ func panChartViewByDX(m *timeserieslinechart.Model, dx int, originMinX, originMa
 }
 
 func redrawKlineCandles(m *timeserieslinechart.Model) {
-	m.DrawCandle(dsOpen, dsHigh, dsLow, dsClose, chartBullStyle, chartBearStyle)
+	m.DrawCandle(dsOpen, dsHigh, dsLow, dsClose, chartCandleUpStyle, chartCandleDownStyle)
 }
 
 func klineTimeRange(klines []*binance.Kline) (time.Time, time.Time) {

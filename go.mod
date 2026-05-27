@@ -3,6 +3,7 @@ module github.com/eslider/go-fdp
 go 1.26.3
 
 require (
+	charm.land/bubbles/v2 v2.1.0
 	charm.land/bubbletea/v2 v2.0.6
 	charm.land/lipgloss/v2 v2.0.3
 	github.com/NimbleMarkets/ntcharts/v2 v2.0.3
@@ -10,8 +11,10 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.32.17
 	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.22.18
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.101.0
+	github.com/charmbracelet/colorprofile v0.4.3
 	github.com/chonla/format v0.0.0-20230227083511-415d7eabd73d
 	github.com/duckdb/duckdb-go/v2 v2.10502.0
+	github.com/eslider/go-trade v0.2.1
 	github.com/ggicci/httpin v0.20.3
 	github.com/go-playground/validator/v10 v10.30.2
 	github.com/go-viper/mapstructure/v2 v2.5.0
@@ -27,7 +30,6 @@ require (
 )
 
 require (
-	charm.land/bubbles/v2 v2.1.0 // indirect
 	github.com/apache/arrow-go/v18 v18.6.0 // indirect
 	github.com/apache/arrow/go/arrow v0.0.0-20211112161151-bc219186db40 // indirect
 	github.com/apache/thrift v0.23.0 // indirect
@@ -46,7 +48,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.35.21 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.42.1 // indirect
 	github.com/aws/smithy-go v1.25.1 // indirect
-	github.com/charmbracelet/colorprofile v0.4.3 // indirect
 	github.com/charmbracelet/ultraviolet v0.0.0-20260428153724-66037269d7be // indirect
 	github.com/charmbracelet/x/ansi v0.11.7 // indirect
 	github.com/charmbracelet/x/term v0.2.2 // indirect

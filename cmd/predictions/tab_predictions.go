@@ -116,11 +116,7 @@ func (m predictionsModel) Update(msg tea.Msg) (predictionsModel, tea.Cmd) {
 			return m, nil
 		}
 		m.rows = msg.rows
-		if len(m.rows) == 0 {
-			m.status = "no native frames"
-		} else {
-			m.status = fmt.Sprintf("updated %s UTC", msg.at.Format("15:04:05"))
-		}
+		m.status = predictionsStatus(m.cfg.frames, m.rows, msg.at, nil)
 	}
 	return m, nil
 }

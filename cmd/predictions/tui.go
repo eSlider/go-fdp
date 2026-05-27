@@ -1,10 +1,12 @@
 package main
 
 import (
+	"os"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/colorprofile"
 	"github.com/eslider/go-fdp/pkg/data"
 	"github.com/eslider/go-fdp/pkg/polymarket"
 	zone "github.com/lrstanley/bubblezone/v2"
@@ -27,8 +29,12 @@ func frameStrings(frames []data.Frame) []string {
 type chartsTickMsg struct{}
 
 func runTUI(cfg appConfig, collector *polymarket.Collector) error {
+	env := append(os.Environ(), "CLICOLOR_FORCE=1")
 	m := newRootModel(cfg, collector)
-	p := tea.NewProgram(m)
+	p := tea.NewProgram(m,
+		tea.WithEnvironment(env),
+		tea.WithColorProfile(colorprofile.ANSI),
+	)
 	_, err := p.Run()
 	return err
 }
@@ -87,6 +93,8 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
+	case tea.CapabilityMsg, tea.ColorProfileMsg:
+		// Keep fixed ANSI profile; TrueColor/Ascii upgrades break candle colors in tmux.
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "q", "esc", "ctrl+c":

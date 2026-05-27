@@ -119,6 +119,7 @@ func (c *Collector) fetchWindow(ctx context.Context, frame data.Frame, windowSta
 }
 
 // FetchCurrentSnapshot resolves the active native Polymarket window and returns a live snapshot.
+// When the native slug is missing (404), the current 15m or 5m event is used as a proxy.
 func (c *Collector) FetchCurrentSnapshot(ctx context.Context, market string, frame data.Frame) ([]Snapshot, error) {
 	_ = market
 	if !HasNativeSlug(frame) {
@@ -126,7 +127,7 @@ func (c *Collector) FetchCurrentSnapshot(ctx context.Context, market string, fra
 	}
 	now := time.Now().UTC()
 	ws := AlignWindowStart(now, frame)
-	ev, err := c.client.FetchEventBySlug(ctx, SlugForWindow(frame, ws))
+	ev, fallback, err := c.resolveCurrentEvent(ctx, frame, ws, now)
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +136,7 @@ func (c *Collector) FetchCurrentSnapshot(ctx context.Context, market string, fra
 		return nil, err
 	}
 	winEnd := ws.Add(NativeFrameDuration(frame))
-	if !ev.WindowEnd.IsZero() {
+	if !ev.WindowEnd.IsZero() && !fallback {
 		winEnd = ev.WindowEnd
 	}
 	return []Snapshot{{
@@ -147,6 +148,31 @@ func (c *Collector) FetchCurrentSnapshot(ctx context.Context, market string, fra
 		WindowStart: ws,
 		WindowEnd:   winEnd,
 	}}, nil
+}
+
+// resolveCurrentEvent tries the native slug for frame, falling back to 15m
+// then 5m events that enclose now when the native slug is missing.
+func (c *Collector) resolveCurrentEvent(ctx context.Context, frame data.Frame, ws, now time.Time) (*ResolvedEvent, bool, error) {
+	ev, err := c.client.FetchEventBySlug(ctx, SlugForWindow(frame, ws))
+	if err == nil {
+		return ev, false, nil
+	}
+	if !errors.Is(err, ErrNotFound) {
+		return nil, false, err
+	}
+	for _, fb := range []data.Frame{data.FifteenMin, data.FiveMinute} {
+		if fb == frame {
+			continue
+		}
+		ev, err = c.client.FetchEventBySlug(ctx, SlugForWindow(fb, AlignWindowStart(now, fb)))
+		if err == nil {
+			return ev, true, nil
+		}
+		if !errors.Is(err, ErrNotFound) {
+			return nil, false, err
+		}
+	}
+	return nil, false, ErrNotFound
 }
 
 // livePrices returns implied Up/Down probabilities, preferring Gamma outcomePrices
